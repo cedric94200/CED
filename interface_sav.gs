@@ -1133,11 +1133,12 @@ function savGetStats_() {
   const cases = savListCases() || [];
   let distEnCours = 0;
   let mpEnCours = 0;
-  let clos = 0; // clôturés (avoir / hors garantie)
+  let clos = 0; // clôturés (avoir / hors garantie / archivés)
   // Statut "solution" sur dossiers finalisés
   let dossiersRepares = 0;
   let dossiersEchanges = 0;
   let dossiersAvoir = 0;
+  let dossiersHG = 0;
   let dossiersFinalises = 0;
 
   const lastDecisionByNumero = {};
@@ -1216,19 +1217,17 @@ function savGetStats_() {
     const type = String(c.type || "").trim();
     const isClos = etat === ETAT_CLOTURE_AVOIR || etat === ETAT_FERMÉ_HG;
     const isArch = etat === ETAT_ARCHIVE;
-    if (isClos) {
+    if (isClos || isArch) {
       clos++;
       dossiersFinalises++;
-      if (etat === ETAT_CLOTURE_AVOIR) dossiersAvoir++;
-      else {
-        const numero = String(c.numero || "").trim();
-        const dec = numero && lastDecisionByNumero[numero] ? String(lastDecisionByNumero[numero].decision || "").trim() : "";
-        if (dec === "Réparation validée") dossiersRepares++;
-        else if (dec === "Échange") dossiersEchanges++;
-      }
+      const numero = String(c.numero || "").trim();
+      const dec = numero && lastDecisionByNumero[numero] ? String(lastDecisionByNumero[numero].decision || "").trim() : "";
+      if (etat === ETAT_CLOTURE_AVOIR || dec === "Avoir") dossiersAvoir++;
+      else if (dec === "Réparation validée") dossiersRepares++;
+      else if (dec === "Échange") dossiersEchanges++;
+      else if (etat === ETAT_FERMÉ_HG || dec === "Hors garantie" || dec === "Refus garantie") dossiersHG++;
       continue;
     }
-    if (isArch) continue;
     if (type === "Distributeur") distEnCours++;
     else if (type === "Marketplace") mpEnCours++;
   }
@@ -1362,6 +1361,7 @@ function savGetStats_() {
     dossiersRepares,
     dossiersEchanges,
     dossiersAvoir,
+    dossiersHG,
     delaiMoyenClotureDistJ: avgInt_(sumCloseDistDays, cntCloseDist),
     delaiMoyenClotureMpJ: avgInt_(sumCloseMpDays, cntCloseMp),
     delaiMoyenLivraisonJ: avgInt_(sumLivDays, cntLiv),
@@ -5837,12 +5837,13 @@ function getSavHtml_(payloadB64) {
       html += line('Dossiers en cours — distributeur', s.distEnCours||0, '');
       html += line('Dossiers en cours — marketplace', s.mpEnCours||0, '');
       html += line('Dossiers clos', s.dossiersClos||0, 'ok');
-      if((s.dossiersRepares||0)||(s.dossiersEchanges||0)||(s.dossiersAvoir||0)){
+      if((s.dossiersRepares||0)||(s.dossiersEchanges||0)||(s.dossiersAvoir||0)||(s.dossiersHG||0)){
         html += '<div style="height:6px"></div>';
         html += '<div class="muted" style="font-weight:950;margin:0 0 2px 2px">Dossiers finalisés (résultat)</div>';
         html += line('Réparés', s.dossiersRepares||0, 'ok');
         html += line('Échangés', s.dossiersEchanges||0, 'ok');
         html += line('Avoir', s.dossiersAvoir||0, 'ok');
+        if(s.dossiersHG||0) html += line('Hors garantie / Refus', s.dossiersHG||0, 'warn');
       }
       html += '<div style="height:6px"></div>';
       html += '<div class="muted" style="font-weight:950;margin:0 0 2px 2px">Transport et logistique</div>';
@@ -9120,11 +9121,27 @@ function getSavHtml_(payloadB64) {
               '</div>';
 
             var html = header;
+
+            // Répartition Distributeur / Marketplace
+            if(a.byType){
+              var bt=a.byType;
+              var btTotal=Number((bt.Distributeur||0))+(bt.Marketplace||0);
+              if(btTotal>0){
+                html += '<div class="evt" style="margin-bottom:14px">';
+                html += '<div style="font-weight:950;margin-bottom:6px">Répartition Distributeur / Marketplace</div>';
+                html += '<div style="display:flex;gap:10px;flex-wrap:wrap">';
+                html += '<div style="flex:1;min-width:140px;padding:10px 12px;border:1px solid var(--border);border-radius:14px;background:var(--panel);text-align:center"><div class="muted" style="font-size:11px;font-weight:900;text-transform:uppercase">Distributeur</div><div style="font-size:20px;font-weight:950">'+esc(bt.Distributeur||0)+'</div><div class="muted">'+esc(Math.round((bt.Distributeur||0)/btTotal*100))+'%</div></div>';
+                html += '<div style="flex:1;min-width:140px;padding:10px 12px;border:1px solid var(--border);border-radius:14px;background:var(--panel);text-align:center"><div class="muted" style="font-size:11px;font-weight:900;text-transform:uppercase">Marketplace</div><div style="font-size:20px;font-weight:950">'+esc(bt.Marketplace||0)+'</div><div class="muted">'+esc(Math.round((bt.Marketplace||0)/btTotal*100))+'%</div></div>';
+                html += '</div></div>';
+              }
+            }
+
             html += block('Pannes les plus signalées', a.topPannes||[]);
             html += block('Familles de pannes', a.topFamilles||[]);
             html += block('Types appareils', a.topAppareils||[]);
             html += block('Modèles les plus concernés', a.topModeles||[]);
             html += block('Décisions expertise (dernière)', a.topDecisions||[]);
+            html += block('Répartition par état dossier', a.topEtats||[]);
             html += listBlock('Références les plus signalées (PDC + Expertise)', a.topRefs||[]);
 
             out.innerHTML = html;
