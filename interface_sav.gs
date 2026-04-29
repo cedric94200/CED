@@ -322,6 +322,7 @@ const SAV_CACHE_KEYS = {
   PROCS: "sav:procs",
   STATS: "sav:stats",
   KPIS: "sav:kpis",
+  MONTHLY: "sav:monthly",
   CASES_ALL: "sav:cases:all",
   LOG_OPEN: "sav:log:open",
   MP_OPEN: "sav:mp:open",
@@ -1430,6 +1431,53 @@ function savGetKpis_() {
 
   savCachePut_(SAV_CACHE_KEYS.KPIS, out);
   return out;
+}
+
+function savGetMonthlyEvolution() {
+  return savGetMonthlyEvolution_();
+}
+
+function savGetMonthlyEvolution_() {
+  const cached = savCacheGet_(SAV_CACHE_KEYS.MONTHLY);
+  if (cached) return cached;
+
+  const ss = SpreadsheetApp.openById(SAV_SPREADSHEET_ID);
+  const byMonth = {};
+
+  [
+    { sheet: SAV_SHEET_DIST, hdr: HDR_DIST },
+    { sheet: SAV_SHEET_MP,   hdr: HDR_MP   },
+  ].forEach((cfg) => {
+    const sh = ss.getSheetByName(cfg.sheet);
+    if (!sh || sh.getLastRow() < 2) return;
+    ensureHeaderGeneric_(sh, cfg.hdr);
+    const idx = savHeaderIndexByName_(sh);
+    const lr = sh.getLastRow();
+    const width = Math.max(sh.getLastColumn(), cfg.hdr.length);
+    const vals = sh.getRange(2, 1, lr - 1, width).getValues();
+    const colCreate = idx["Date création"] || (cfg.sheet === SAV_SHEET_DIST ? 9 : 10);
+    const colClose  = idx["Date clôture"]  || cfg.hdr.length;
+    for (let i = 0; i < vals.length; i++) {
+      const r = vals[i] || [];
+      const dCreate = r[colCreate - 1];
+      const dClose  = r[colClose  - 1];
+      if (dCreate instanceof Date && !isNaN(dCreate.getTime())) {
+        const k = Utilities.formatDate(dCreate, Session.getScriptTimeZone(), "yyyy-MM");
+        if (!byMonth[k]) byMonth[k] = { month: k, created: 0, closed: 0 };
+        byMonth[k].created++;
+      }
+      if (dClose instanceof Date && !isNaN(dClose.getTime())) {
+        const k = Utilities.formatDate(dClose, Session.getScriptTimeZone(), "yyyy-MM");
+        if (!byMonth[k]) byMonth[k] = { month: k, created: 0, closed: 0 };
+        byMonth[k].closed++;
+      }
+    }
+  });
+
+  const arr = Object.values(byMonth);
+  arr.sort((a, b) => a.month.localeCompare(b.month));
+  savCachePut_(SAV_CACHE_KEYS.MONTHLY, arr, 300);
+  return arr;
 }
 
 function savComputeGlobalAnalytics_() {
@@ -5844,6 +5892,11 @@ function getSavHtml_(payloadB64) {
         html += line('Échangés', s.dossiersEchanges||0, 'ok');
         html += line('Avoir', s.dossiersAvoir||0, 'ok');
         if(s.dossiersHG||0) html += line('Hors garantie / Refus', s.dossiersHG||0, 'warn');
+        var _tot = (s.dossiersRepares||0)+(s.dossiersEchanges||0)+(s.dossiersAvoir||0)+(s.dossiersHG||0);
+        if(_tot>0){
+          var _acc = Math.round(((s.dossiersRepares||0)+(s.dossiersEchanges||0)+(s.dossiersAvoir||0))/_tot*100);
+          html += line('Taux acceptation garantie', _acc+'%', _acc>=70?'ok':(_acc>=40?'warn':'bad'));
+        }
       }
       html += '<div style="height:6px"></div>';
       html += '<div class="muted" style="font-weight:950;margin:0 0 2px 2px">Transport et logistique</div>';
@@ -8976,6 +9029,7 @@ function getSavHtml_(payloadB64) {
           '<button class="btn" type="button" id="backSys">Retour</button>' +
           '<button class="btn primary" type="button" id="loadSysStats">Charger les statistiques globales</button>' +
           '<button class="btn" type="button" id="loadSysAnalytics">Analyses pannes / refs</button>' +
+          '<button class="btn" type="button" id="loadSysMonthly">Évolution mensuelle</button>' +
           '<div class="muted" id="sysStatsStatus"></div>' +
         '</div>' +
         '<div id="sysStatsOut" style="margin-top:12px"></div>'+
@@ -8986,6 +9040,7 @@ function getSavHtml_(payloadB64) {
 
       var btn=document.getElementById('loadSysStats');
       var btnA=document.getElementById('loadSysAnalytics');
+      var btnM=document.getElementById('loadSysMonthly');
       var status=document.getElementById('sysStatsStatus');
       var out=document.getElementById('sysStatsOut');
       var yc=document.getElementById('sysYearClose');
@@ -9028,6 +9083,15 @@ function getSavHtml_(payloadB64) {
               h += card('Transport livré', gotKpis.transportLivre||0, 'var(--ok)');
               if(gotKpis.transportTrackingManquant){
                 h += card('Expédié sans tracking', gotKpis.transportTrackingManquant||0, 'var(--warn)');
+              }
+              // Taux acceptation garantie : calculé depuis gotStats si dispo
+              if(gotStats){
+                var _acc=(gotStats.dossiersRepares||0)+(gotStats.dossiersEchanges||0)+(gotStats.dossiersAvoir||0);
+                var _tot=_acc+(gotStats.dossiersHG||0);
+                if(_tot>0){
+                  var _pct=Math.round(_acc/_tot*100);
+                  h += card('Taux acceptation garantie', _pct+'%', _pct>=70?'var(--ok)':(_pct>=40?'var(--warn)':'var(--bad)'));
+                }
               }
               h += '</div>';
             }
@@ -9151,6 +9215,52 @@ function getSavHtml_(payloadB64) {
             if(status) status.textContent=(e&&e.message)?e.message:String(e);
             showErr(e);
           }).savBuildGlobalAnalyticsSnapshot();
+        };
+      }
+
+      if(btnM){
+        btnM.onclick=function(){
+          btnM.disabled=true;
+          btnM.textContent='Chargement...';
+          if(status) status.textContent='Chargement de l\\'évolution mensuelle...';
+          google.script.run.withSuccessHandler(function(rows){
+            btnM.disabled=false;
+            btnM.textContent='Évolution mensuelle';
+            if(status) status.textContent='';
+            rows=rows||[];
+            if(!rows.length){ out.innerHTML='<div class="muted">Aucune donnée mensuelle.</div>'; return; }
+            // Calcul max pour normaliser les barres
+            var maxVal=1;
+            rows.forEach(function(r){ maxVal=Math.max(maxVal,r.created||0,r.closed||0); });
+            function bar_(val, color){
+              var w=Math.max(2, Math.round((val/maxVal)*100));
+              return '<div style="height:10px;width:'+w+'%;background:'+color+';border-radius:999px;min-width:2px"></div>';
+            }
+            var h='<div class="evt" style="margin-bottom:14px">';
+            h+='<div style="font-weight:950;margin-bottom:10px">Évolution mensuelle — dossiers créés vs clôturés</div>';
+            h+='<div style="display:flex;gap:12px;margin-bottom:10px">';
+            h+='<div style="display:flex;align-items:center;gap:6px"><div style="width:14px;height:10px;background:var(--accent);border-radius:999px"></div><span class="muted" style="font-size:12px">Créés</span></div>';
+            h+='<div style="display:flex;align-items:center;gap:6px"><div style="width:14px;height:10px;background:var(--ok);border-radius:999px"></div><span class="muted" style="font-size:12px">Clôturés</span></div>';
+            h+='</div>';
+            rows.forEach(function(r){
+              var label=r.month||'';
+              h+='<div style="display:grid;grid-template-columns:70px 1fr 40px;gap:6px;align-items:center;margin-bottom:8px">';
+              h+='<div class="muted" style="font-size:11px;font-weight:900">'+esc(label)+'</div>';
+              h+='<div style="display:flex;flex-direction:column;gap:3px">';
+              h+=bar_(r.created||0,'var(--accent)');
+              h+=bar_(r.closed||0,'var(--ok)');
+              h+='</div>';
+              h+='<div class="muted" style="font-size:11px;text-align:right">'+esc(r.created||0)+' / '+esc(r.closed||0)+'</div>';
+              h+='</div>';
+            });
+            h+='</div>';
+            out.innerHTML=h;
+          }).withFailureHandler(function(e){
+            btnM.disabled=false;
+            btnM.textContent='Évolution mensuelle';
+            if(status) status.textContent=(e&&e.message)?e.message:String(e);
+            showErr(e);
+          }).savGetMonthlyEvolution();
         };
       }
 
