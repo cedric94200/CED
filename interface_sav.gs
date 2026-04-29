@@ -78,7 +78,7 @@ function savGetLogoDataUrl_() {
   }
 
   while (files.hasNext()) {
-    const f = [files.next](http://files.next)();
+    const f = files.next();
     const mime = String(f.getMimeType ? f.getMimeType() : "");
     const name = String(f.getName ? f.getName() : "");
     const lower = name.toLowerCase();
@@ -359,6 +359,10 @@ function savCacheInvalidateAll_() {
   }
 }
 
+function savHtmlEsc_(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
+}
+
 function savSetupDailyRecapTriggers() {
   // Installe un déclencheur quotidien (une fois) pour envoyer les récap.
   const existing = ScriptApp.getProjectTriggers().some((t) => t.getHandlerFunction() === "savSendDailyRecaps");
@@ -382,7 +386,7 @@ function savRemoveDailyRecapTriggers() {
 function savTestEmail(payload) {
   ensureSavSheets_();
   const o = payload || {};
-  const to = String([o.to](http://o.to) || "").trim();
+  const to = String(o.to || "").trim();
   if (!to) return { ok: false, message: "Email destinataire requis." };
   const now = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss");
   const subj = "[TEST] SAV OPTIMEA — envoi via Microsoft 365 (" + now + ")";
@@ -423,7 +427,7 @@ function savSendDailyRecaps() {
     mpByEtat[e].push(c);
   });
 
-  const mpNums = [mp.map](http://mp.map)((c) => String(c.numero || "").trim()).filter(Boolean);
+  const mpNums = mp.map((c) => String(c.numero || "").trim()).filter(Boolean);
   const mpSubject = "[SAV] Marketplace — actions à faire (" + day + ") — " + mpNums.length + " dossier(s)";
   const mpBody = savBuildMarketplaceRecapHtml_(day, mpByEtat, mpNums);
   // Envoi depuis [sav@optimea.fr](mailto:sav@optimea.fr) via Microsoft 365 (HTML conservé)
@@ -446,8 +450,7 @@ function savSendDailyRecaps() {
 }
 
 function savBuildMarketplaceRecapHtml_(day, byEtat, allNums) {
-  const esc = (s) =>
-    String(s || "").replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
+  const esc = savHtmlEsc_;
   let h = "";
   h += '<div style="font-family:Arial,sans-serif;font-size:13px;color:#0f172a">';
   h += "<h2 style=\"margin:0 0 10px 0\">Marketplace — récap actions (" + esc(day) + ")</h2>";
@@ -475,8 +478,7 @@ function savBuildMarketplaceRecapHtml_(day, byEtat, allNums) {
 }
 
 function savBuildLogistiqueRecapHtml_(day, aTraiter, enRoute) {
-  const esc = (s) =>
-    String(s || "").replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
+  const esc = savHtmlEsc_;
   let h = "";
   h += '<div style="font-family:Arial,sans-serif;font-size:13px;color:#0f172a">';
   h += "<h2 style=\"margin:0 0 10px 0\">Logistique — récap actions (" + esc(day) + ")</h2>";
@@ -492,7 +494,9 @@ function savBuildLogistiqueRecapHtml_(day, aTraiter, enRoute) {
     if (!rows.length) return s + '<div style="color:#475569">—</div>';
     s += '<ul style="margin:6px 0 0 18px;padding:0">';
     rows.slice(0, 120).forEach((x) => {
-      const miss = String(x && x.tracking ? x.tracking : "").trim() ? "" : (String(x && x.statutLog || "").trim() === LOG_STAT_EXPEDIE ? " — ⚠ tracking manquant" : "");
+      const hasTracking = String((x && x.tracking) || "").trim();
+      const isExpedied = String((x && x.statutLog) || "").trim() === LOG_STAT_EXPEDIE;
+      const miss = hasTracking ? "" : (isExpedied ? " — ⚠ tracking manquant" : "");
       s +=
         "<li><b>" +
         esc(x.numero) +
@@ -725,7 +729,7 @@ function savProceduresGetAll() {
 
 function savUpsertProcedure(payload) {
   ensureSavSheets_();
-  const id = String((payload && [payload.id](http://payload.id)) || "").trim();
+  const id = String((payload && payload.id) || "").trim();
   const label = String((payload && payload.label) || "").trim();
   if (!id) return { ok: false, message: "Id procédure requis." };
   if (!label) return { ok: false, message: "Libellé requis." };
@@ -825,10 +829,10 @@ function savUnassignModelFromProcedure(modele) {
 function savMpListCases(openOnly) {
   ensureSavSheets_();
   if (openOnly) {
-    const cached = savCacheGet_(SAV_CACHE_[KEYS.MP](http://KEYS.MP)_OPEN);
+    const cached = savCacheGet_(SAV_CACHE_KEYS.MP_OPEN);
     if (cached && Array.isArray(cached)) return cached;
     const out = readCasesFrom_(SAV_SHEET_MP, "Marketplace", false);
-    savCachePut_(SAV_CACHE_[KEYS.MP](http://KEYS.MP)_OPEN, out);
+    savCachePut_(SAV_CACHE_KEYS.MP_OPEN, out);
     return out;
   }
   return readCasesFrom_(SAV_SHEET_MP, "Marketplace", null);
@@ -869,7 +873,7 @@ function savMpListMessages(numero) {
       notes: String(r[9] || ""),
     });
   }
-  out.sort((a, b) => String([a.date](http://a.date) || "").localeCompare(String([b.date](http://b.date) || "")));
+  out.sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
   return out;
 }
 
@@ -978,7 +982,7 @@ function savParseListField_(text) {
   if (t[0] === "[" && t[t.length - 1] === "]") {
     try {
       const arr = JSON.parse(t);
-      if (Array.isArray(arr)) return [arr.map](http://arr.map)((x) => String(x || "").trim()).filter(Boolean);
+      if (Array.isArray(arr)) return arr.map((x) => String(x || "").trim()).filter(Boolean);
     } catch (e) {
       // fallthrough
     }
@@ -1086,8 +1090,7 @@ function doGet(e) {
       const dbg = e && e.parameter && String(e.parameter.debug || "").trim() === "1";
       if (dbg) {
         const html = getSavHtml_(b64);
-        const esc = (s) =>
-          String(s || "").replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
+        const esc = savHtmlEsc_;
         return HtmlService.createHtmlOutput(
           '<!doctype html><meta charset="utf-8"><title>DEBUG HTML</title>' +
             '<pre style="white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,Consolas,monospace;font-size:12px;padding:12px">' +
@@ -1117,7 +1120,6 @@ function doGet(e) {
 }
 
 function savGetStats() {
-  ensureSavSheets_();
   return savGetStats_();
 }
 
@@ -1130,11 +1132,11 @@ function savGetStats_() {
     return Math.round(ms / DAY_MS);
   }
   function avgInt_(sumInt, count) {
-    if (!count || count < 2) return null; // délai moyen pertinent à partir de 2 cas
+    if (!count || count < 2) return null;
     return Math.round(sumInt / count);
   }
 
-  // Dossiers: en cours / clos (sans dépendre d'archivage)
+  const ss = SpreadsheetApp.openById(SAV_SPREADSHEET_ID);
   const cases = savListCases() || [];
   let distEnCours = 0;
   let mpEnCours = 0;
@@ -1145,10 +1147,8 @@ function savGetStats_() {
   let dossiersAvoir = 0;
   let dossiersFinalises = 0;
 
-  // Dernière décision d'expertise par dossier (si renseignée)
   const lastDecisionByNumero = {};
   try {
-    const ss = SpreadsheetApp.openById(SAV_SPREADSHEET_ID);
     const shExp = ss.getSheetByName(SAV_SHEET_EXP);
     if (shExp && shExp.getLastRow() >= 2) {
       ensureHeaderGeneric_(shExp, HDR_EXP);
@@ -1177,9 +1177,7 @@ function savGetStats_() {
   let sumCloseMpDays = 0;
   let cntCloseMp = 0;
 
-  // On lit directement les dates dans les feuilles (fiable)
   try {
-    const ss = SpreadsheetApp.openById(SAV_SPREADSHEET_ID);
     const reNum = /^SAV-\d{4}-\d+$/;
     [
       { sheet: SAV_SHEET_DIST, type: "Distributeur", hdr: HDR_DIST },
@@ -1259,18 +1257,13 @@ function savGetStats_() {
       else if (s === LOG_STAT_LIVRE) transportLivre++;
       if (rows[i] && rows[i].missingTracking) transportTrackingManquant++;
 
-      if (s === LOG_STAT_LIVRE) {
-        // Recalcule à partir de la feuille Logistique (Date demande + Date livraison)
-        // savListLogistique renvoie des strings formatés, donc on relit les dates brutes via valeurs (ci-dessous).
-      }
+
     }
   } catch (e) {
     // ignore : stats ne doivent jamais bloquer le chargement
   }
 
-  // Délai livraison: lecture brute dans la feuille Logistique
   try {
-    const ss = SpreadsheetApp.openById(SAV_SPREADSHEET_ID);
     const sh = ss.getSheetByName(SAV_SHEET_LOG);
     if (sh && sh.getLastRow() >= 2) {
       ensureHeaderGeneric_(sh, HDR_LOG);
@@ -1294,11 +1287,8 @@ function savGetStats_() {
     // ignore
   }
 
-  // Messages Marketplace à traiter (messages IN non lus)
   let mpMessagesATraiter = 0;
   try {
-    const ss = SpreadsheetApp.openById(SAV_SPREADSHEET_ID);
-    // Ne compter que pour les dossiers Marketplace encore "ouverts"
     const openMp = {};
     try {
       const shMp = ss.getSheetByName(SAV_SHEET_MP);
@@ -1332,14 +1322,12 @@ function savGetStats_() {
     // ignore
   }
 
-  // Pièces détachées (PDC)
   let pdcTotal = 0;
   let pdcEnCours = 0;
   let pdcLivre = 0;
   let sumPdcLivDays = 0;
   let cntPdcLiv = 0;
   try {
-    const ss = SpreadsheetApp.openById(SAV_SPREADSHEET_ID);
     const sh = ss.getSheetByName(SAV_SHEET_PDC);
     if (sh && sh.getLastRow() >= 2) {
       ensureHeaderGeneric_(sh, HDR_PDC);
@@ -1399,7 +1387,6 @@ function savGetStats_() {
 }
 
 function savGetKpis() {
-  ensureSavSheets_();
   return savGetKpis_();
 }
 
@@ -1421,7 +1408,7 @@ function savGetKpis_() {
     transportTrackingManquant: 0,
   };
 
-  [out.total](http://out.total) = cases.length;
+  out.total = cases.length;
 
   for (let i = 0; i < cases.length; i++) {
     const c = cases[i] || {};
@@ -1512,7 +1499,7 @@ function savComputeGlobalAnalytics_() {
     inc_(byModele, modele);
 
     const p = parsePanne_(panne);
-    if ([p.app](http://p.app)) inc_(byPanneAppareil, [p.app](http://p.app));
+    if (p.app) inc_(byPanneAppareil, p.app);
     if (p.fam) inc_(byPanneFamille, p.fam);
     if (p.label) inc_(byPanneLabel, p.label);
   }
@@ -1666,7 +1653,7 @@ function savBuildGlobalAnalyticsSnapshot() {
       let builder = sh.newChart().addRange(dataRange).setOption("legend", { position: "right" }).setPosition(chartPosRow, chartPosCol, 0, 0);
       if (b.kind === "pie") builder = builder.asPieChart().setOption("pieHole", 0.35);
       else builder = builder.asBarChart().setOption("bars", "horizontal");
-      sh.insertChart([builder.build](http://builder.build)());
+      sh.insertChart(builder.build());
     });
   } catch (e) {
     // ne doit jamais casser l'analyse
@@ -1862,7 +1849,7 @@ function savImportVolumesFromCsv(payload) {
   if (!y) return { ok: false, message: "Année requise." };
   if (!file || !file.base64) return { ok: false, message: "Fichier requis." };
 
-  const name = String([file.name](http://file.name) || "").trim();
+  const name = String(file.name || "").trim();
   const mimeType = String(file.mimeType || "").trim().toLowerCase();
   // On supporte CSV / texte uniquement (Excel .xlsx non parsé ici)
   const looksLikeCsv = mimeType.indexOf("csv") !== -1 || mimeType.indexOf("text") !== -1 || /\.csv$/i.test(name);
@@ -2650,7 +2637,7 @@ function savUploadAttachments(payload) {
   let created = 0;
   for (let i = 0; i < files.length; i++) {
     const f = files[i] || {};
-    const name = String([f.name](http://f.name) || ("piece-" + (i + 1))).trim();
+    const name = String(f.name || ("piece-" + (i + 1))).trim();
     const mimeType = String(f.mimeType || "application/octet-stream").trim();
     const b64 = String(f.base64 || "").trim();
     if (!b64) continue;
@@ -2674,7 +2661,7 @@ function savUploadAttachments(payload) {
 
 function savGetOrCreateSubFolder_(parentFolder, name) {
   const it = parentFolder.getFoldersByName(name);
-  if (it.hasNext()) return [it.next](http://it.next)();
+  if (it.hasNext()) return it.next();
   return parentFolder.createFolder(name);
 }
 
@@ -2752,7 +2739,7 @@ function pdcCreate(payload) {
     refs,
     designation,
   });
-  if (dupe) return { ok: true, deduped: true, id: [dupe.id](http://dupe.id), row: dupe.row };
+  if (dupe) return { ok: true, deduped: true, id: dupe.id, row: dupe.row };
 
   const id = pdcNextNumber_(ss);
   sh.appendRow([id, now, poids, tr, tracking, LOG_STAT_A_TRAITER, "", "", notes, colisPret, pointDepart, adresseArrivee, refs, designation, dossierSav, ""]);
@@ -2779,7 +2766,7 @@ function pdcFindDuplicateRequest_(sh, o) {
         .trim()
         .toLowerCase();
     }
-    const now = o && [o.now](http://o.now) instanceof Date ? [o.now](http://o.now) : new Date();
+    const now = o && o.now instanceof Date ? o.now : new Date();
     const lr = sh.getLastRow();
     if (lr < 2) return null;
     const from = Math.max(2, lr - 20);
@@ -2877,7 +2864,7 @@ function pdcList(openOnly) {
 function pdcListPage(payload) {
   ensureSavSheets_();
   const o = payload || {};
-  const tab = String([o.tab](http://o.tab) || "open").trim().toLowerCase(); // open|a|e|l|x|all
+  const tab = String(o.tab || "open").trim().toLowerCase(); // open|a|e|l|x|all
   const limit = Math.min(200, Math.max(10, Number(o.limit || 50)));
   const offset = Math.max(0, Number(o.offset || 0));
   const year = o.year === "" || o.year == null ? null : Number(o.year);
@@ -3070,7 +3057,7 @@ function pdcUploadDocs(payload) {
   let created = 0;
   for (let i = 0; i < files.length; i++) {
     const f = files[i] || {};
-    const name = String([f.name](http://f.name) || ("doc-" + (i + 1))).trim();
+    const name = String(f.name || ("doc-" + (i + 1))).trim();
     const mimeType = String(f.mimeType || "application/octet-stream").trim();
     const b64 = String(f.base64 || "").trim();
     if (!b64) continue;
@@ -3313,7 +3300,7 @@ function savGeneratePlaqueSheetPdf(payload) {
 
   const { folder, folderUrl } = savEnsureDriveFolderAndWriteUrl_(sheetName, row, numero);
 
-  const esc = (s) => String(s || "").replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
+  const esc = savHtmlEsc_;
   const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd");
 
   const html =
@@ -3451,10 +3438,10 @@ function m365GetAccessToken_() {
     const t = String(token || "").trim();
     const e = Number(expMs || 0);
     // keep 2 min safety margin (token is usually 1h)
-    return !!(t && e && ([Date.now](http://Date.now)() + 2 * 60 * 1000) < e);
+    return !!(t && e && (Date.now() + 2 * 60 * 1000) < e);
   };
 
-  // Cache token to reduce calls to [login.microsoftonline.com](http://login.microsoftonline.com) (prevents UrlFetch bandwidth quota issues)
+  // Cache token to reduce calls to login.microsoftonline.com (prevents UrlFetch bandwidth quota issues)
   const cache = CacheService.getScriptCache();
   const cacheKey = "m365:token:" + tenant + ":" + clientId;
   const readCached = () => {
@@ -3537,7 +3524,7 @@ function m365GetAccessToken_() {
       try {
         const pTok = String(props.getProperty(M365_PROP_KEYS.ACCESS_TOKEN) || "").trim();
         const pExp = Number(props.getProperty(M365_PROP_KEYS.ACCESS_TOKEN_EXPIRES_MS) || 0);
-        if (pTok && pExp && [Date.now](http://Date.now)() < pExp) return pTok; // allow even if near expiry
+        if (pTok && pExp && Date.now() < pExp) return pTok; // allow even if near expiry
       } catch (e2) {}
       throw new Error(
         "Quota Apps Script (UrlFetch) dépassé sur /token. " +
@@ -3557,7 +3544,7 @@ function m365GetAccessToken_() {
   try {
     const expiresIn = Math.max(60, Number(obj.expires_in || 3600));
     const ttl = Math.max(60, Math.min(3500, expiresIn - 60)); // keep margin
-    const expMs = [Date.now](http://Date.now)() + expiresIn * 1000;
+    const expMs = Date.now() + expiresIn * 1000;
     cache.put(cacheKey, JSON.stringify({ token: obj.access_token, expMs: expMs }), ttl);
     // Persist too (survives redeploy/cache eviction)
     props.setProperty(M365_PROP_KEYS.ACCESS_TOKEN, String(obj.access_token));
@@ -3860,7 +3847,7 @@ function savGenerateProc1PostalRequestPdf(payload) {
   const { folder, folderUrl } = savEnsureDriveFolderAndWriteUrl_(sheetName, row, numero);
   const docs = savGetOrCreateSubFolder_(folder, "Étiquettes & courriers");
 
-  const esc = (s) => String(s || "").replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
+  const esc = savHtmlEsc_;
   const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd");
 
   const html =
@@ -3934,7 +3921,7 @@ function savGenerateReturnLabelPdf(payload) {
   const { folder, folderUrl } = savEnsureDriveFolderAndWriteUrl_(sheetName, row, numero);
   const docs = savGetOrCreateSubFolder_(folder, "Étiquettes & courriers");
 
-  const esc = (s) => String(s || "").replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
+  const esc = savHtmlEsc_;
   const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd");
   const title = "ÉTIQUETTE DE RETOUR - SAV OPTIMEA";
 
@@ -3984,7 +3971,7 @@ function savGenerateReturnLabelPdf(payload) {
   try {
     const it = docs.getFilesByName(fileName);
     if (it && it.hasNext()) {
-      const f = [it.next](http://it.next)();
+      const f = it.next();
       return { ok: true, folderUrl, fileUrl: f.getUrl(), fileName, fileId: f.getId(), already: true };
     }
   } catch (e) {
@@ -4009,7 +3996,7 @@ function savGenerateLogistiqueShippingLabelPdf_(o) {
   const { folder, folderUrl } = savEnsureDriveFolderAndWriteUrl_(sheetName, row, numero);
   const docs = savGetOrCreateSubFolder_(folder, "Étiquettes & courriers");
 
-  const esc = (s) => String(s || "").replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
+  const esc = savHtmlEsc_;
   const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd");
 
   const html =
@@ -4046,7 +4033,7 @@ function savGenerateLogistiqueShippingLabelPdf_(o) {
   try {
     const it = docs.getFilesByName(fileName);
     if (it && it.hasNext()) {
-      const f = [it.next](http://it.next)();
+      const f = it.next();
       return { ok: true, folderUrl, fileUrl: f.getUrl(), fileName, fileId: f.getId(), already: true };
     }
   } catch (e) {
@@ -4164,7 +4151,7 @@ function savGenerateCaseRecapPdf(payload) {
     info.panne = String(mainRow[(idxMain["Panne constatée"] || 5) - 1] || "").trim();
     info.serie = String(mainRow[(idxMain["Numéro de série"] || 6) - 1] || "").trim();
     info.facture = String(mainRow[(idxMain["Facture reçue"] || 7) - 1] || "").trim();
-    [info.photo](http://info.photo) = String(mainRow[(idxMain["Photo plaque reçue"] || 8) - 1] || "").trim();
+    info.photo = String(mainRow[(idxMain["Photo plaque reçue"] || 8) - 1] || "").trim();
   } else {
     info.type = "Marketplace";
     info.marketplace = String(mainRow[(idxMain["Nom marketplace"] || 2) - 1] || "").trim();
@@ -4188,7 +4175,7 @@ function savGenerateCaseRecapPdf(payload) {
   const logs = savReadLogistiqueByNumero_(ss, numero);
   const mpMsgs = sheetName === SAV_SHEET_MP ? savReadMarketplaceMessagesByNumero_(ss, numero) : [];
 
-  const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
+  const esc = savHtmlEsc_;
 
   function rowLine(label, value) {
     return '<div class="row"><span class="lbl">' + esc(label) + "</span> " + esc(value) + "</div>";
@@ -4251,7 +4238,7 @@ function savGenerateCaseRecapPdf(payload) {
     dossierHtml += rowLine("Numéro de série", info.serie || "");
     dossierHtml += rowLine("Panne constatée", info.panne || "");
     dossierHtml += rowLine("Facture reçue", info.facture || "");
-    dossierHtml += rowLine("Photo plaque reçue", [info.photo](http://info.photo) || "");
+    dossierHtml += rowLine("Photo plaque reçue", info.photo || "");
   } else {
     dossierHtml += rowLine("Marketplace", info.marketplace || "");
     dossierHtml += rowLine("Nom client", info.clientNom || "");
@@ -4334,8 +4321,8 @@ function savGenerateCaseRecapPdf(payload) {
   );
 
   if (mpMsgs && mpMsgs.length) {
-    const msgRows = [mpMsgs.map](http://mpMsgs.map)((m) => [
-      String([m.date](http://m.date) || ""),
+    const msgRows = mpMsgs.map((m) => [
+      String(m.date || ""),
       String(m.sens || ""),
       String(m.auteur || ""),
       String(m.message || ""),
@@ -4376,7 +4363,7 @@ function savGetCaseTimelineHtml(payload) {
     const etat = String(mainRow[etatCol - 1] || "").trim();
     const closed = mainRow[closeCol - 1];
 
-    const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
+    const esc = savHtmlEsc_;
 
     function row_(d, step, details, urlLabel, url) {
       const dateStr = d instanceof Date && !isNaN(d.getTime()) ? Utilities.formatDate(d, Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm") : String(d || "");
@@ -4462,7 +4449,7 @@ function savGetCaseTimelineHtml(payload) {
       if (x.dateLivraison) html += row_(x.dateLivraison, "Livraison", "", "Preuves", proofUrl);
     });
     avoirRows.forEach((x) => {
-      html += row_([x.date](http://x.date), "Ticket avoir", ["Statut: " + (x.statut || ""), "Centrale: " + (x.centrale || ""), x.facture ? ("Facture: " + x.facture) : ""].filter(Boolean).join("\n"), "", "");
+      html += row_(x.date, "Ticket avoir", ["Statut: " + (x.statut || ""), "Centrale: " + (x.centrale || ""), x.facture ? ("Facture: " + x.facture) : ""].filter(Boolean).join("\n"), "", "");
     });
 
     html += "</tbody></table></div>";
@@ -4610,7 +4597,7 @@ function savReadMarketplaceMessagesByNumero_(ss, numero) {
         date: formatDate_(r[7]),
       });
     }
-    out.sort((a, b) => String([a.date](http://a.date) || "").localeCompare(String([b.date](http://b.date) || "")));
+    out.sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
     return out;
   } catch (e) {
     return [];
@@ -4710,7 +4697,7 @@ function savAssertDocsBeforeNextStep_(ctx) {
   const sheet = String((ctx && ctx.sheet) || "").trim();
   const row = Number((ctx && ctx.row) || 0);
   const etat = String((ctx && ctx.etat) || "").trim();
-  const sh = (ctx && [ctx.sh](http://ctx.sh)) || null;
+  const sh = (ctx && ctx.sh) || null;
   if (!sheet || !row || row < 2 || !etat || !sh) return;
 
   // On bloque uniquement quand on quitte les étapes "amont"
@@ -5159,7 +5146,7 @@ function savOtherLogList(payload) {
       notes: String(r[8] || ""),
     });
   }
-  out.sort((a, b) => String([b.date](http://b.date) || "").localeCompare(String([a.date](http://a.date) || "")));
+  out.sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
   return out;
 }
 
@@ -5175,7 +5162,7 @@ function savOtherLogCreate(payload) {
   ensureHeaderGeneric_(sh, HDR_LOG_OTHER);
 
   const id = nextId_("OTH", ss, SAV_SHEET_LOG_OTHER, 1) || ("OTH-" + new Date().getTime());
-  const date = [o.date](http://o.date) ? [o.date](http://o.date) : new Date();
+  const date = o.date ? o.date : new Date();
   sh.appendRow([
     id,
     sens,
@@ -5210,7 +5197,7 @@ function savOtherLogSave(payload) {
   sh.getRange(otherRow, 1, 1, HDR_LOG_OTHER.length).setValues([[
     id,
     sens,
-    [o.date](http://o.date) ? [o.date](http://o.date) : cur[2],
+    o.date ? o.date : cur[2],
     String(o.ref || ""),
     String(o.pointDepart || ""),
     String(o.adresseArrivee || ""),
@@ -5264,7 +5251,7 @@ function savUploadLogistiqueProof(payload) {
   let created = 0;
   for (let i = 0; i < files.length; i++) {
     const f = files[i] || {};
-    const name = String([f.name](http://f.name) || ("preuve-" + (i + 1))).trim();
+    const name = String(f.name || ("preuve-" + (i + 1))).trim();
     const mimeType = String(f.mimeType || "application/octet-stream").trim();
     const b64 = String(f.base64 || "").trim();
     if (!b64) continue;
@@ -5650,7 +5637,7 @@ function savRdvVisioUpsert(payload) {
   const o = payload || {};
   const numero = String(o.numero || "").trim();
   if (!numero) return { ok: false, message: "Numéro dossier requis." };
-  const date = String([o.date](http://o.date) || "").trim(); // YYYY-MM-DD (input[type=date])
+  const date = String(o.date || "").trim(); // YYYY-MM-DD (input[type=date])
   const heure = String(o.heure || "").trim(); // HH:MM
   if (!date || !heure) return { ok: false, message: "Date et heure requises." };
 
@@ -5668,8 +5655,8 @@ function savRdvVisioUpsert(payload) {
   const type = String(o.type || "").trim();
   const modele = String(o.modele || "").trim();
   const client = String(o.client || "").trim();
-  const email = String([o.email](http://o.email) || "").trim();
-  const tel = String([o.tel](http://o.tel) || "").trim();
+  const email = String(o.email || "").trim();
+  const tel = String(o.tel || "").trim();
   const etat = String(o.etat || "").trim() || "À VENIR";
   const notes = String(o.notes || "").trim();
 
@@ -5728,7 +5715,7 @@ function savRdvVisioList(payload) {
     });
   }
   // tri date+heure asc
-  out.sort((a, b) => String([a.date](http://a.date) + " " + a.heure).localeCompare(String([b.date](http://b.date) + " " + b.heure)));
+  out.sort((a, b) => String(a.date + " " + a.heure).localeCompare(String(b.date + " " + b.heure)));
   return out;
 }
 
@@ -5769,7 +5756,7 @@ function savFindCaseByNumero(payload) {
     ];
     for (let i = 0; i < sheets.length; i++) {
       const cfg = sheets[i];
-      const sh = ss.getSheetByName([cfg.name](http://cfg.name));
+      const sh = ss.getSheetByName(cfg.name);
       if (!sh || sh.getLastRow() < 2) continue;
       ensureHeaderGeneric_(sh, cfg.hdr);
       const rangeNums = sh.getRange(2, 1, sh.getLastRow() - 1, 1); // col A = numéro
@@ -5777,7 +5764,7 @@ function savFindCaseByNumero(payload) {
       const hit = finder.findNext();
       if (hit) {
         const row = hit.getRow();
-        return { ok: true, sheet: [cfg.name](http://cfg.name), row, type: cfg.type, numero };
+        return { ok: true, sheet: cfg.name, row, type: cfg.type, numero };
       }
     }
     return { ok: false, message: "Dossier introuvable : " + numero };
@@ -5797,7 +5784,7 @@ function savAppendPdcToCase_(ss, numero, pdcId) {
     ];
     for (let i = 0; i < cfgs.length; i++) {
       const cfg = cfgs[i];
-      const sh = ss.getSheetByName([cfg.name](http://cfg.name));
+      const sh = ss.getSheetByName(cfg.name);
       if (!sh || sh.getLastRow() < 2) continue;
       ensureHeaderGeneric_(sh, cfg.hdr);
       const idx = savHeaderIndexByName_(sh);
@@ -5860,7 +5847,7 @@ function nextSavNumberGlobal_(ss) {
 function ensureSavSheets_() {
   const id = String(SAV_SPREADSHEET_ID || "").trim();
   if (!id || id === "REMPLACE_PAR_ID_DU_CLASSEUR") {
-    throw new Error("Configure SAV_SPREADSHEET_ID dans interface_[sav.gs](http://sav.gs)");
+    throw new Error("Configure SAV_SPREADSHEET_ID dans interface_sav.gs");
   }
   const ss = SpreadsheetApp.openById(id);
   const names = [
@@ -6130,7 +6117,7 @@ function getSavHtml_(payloadB64) {
   <script>
     function showErr(e){
       var d=document.getElementById('diag');
-      [d.style](http://d.style).display='block';
+      d.style.display='block';
       d.textContent=(e&&e.message)?e.message:String(e);
     }
     function b64ToObj(b64){
@@ -6231,7 +6218,7 @@ function getSavHtml_(payloadB64) {
     // si l'environnement OAuth/iframe Google est capricieux.
     function loadCentralesAchat_(){
       try{
-        [google.script.run](http://google.script.run).withSuccessHandler(function(list){
+        google.script.run.withSuccessHandler(function(list){
           centralesAchat = Array.isArray(list)?list:[];
         }).withFailureHandler(function(){}).savListCentralesAchat();
       }catch(e){}
@@ -6263,7 +6250,7 @@ function getSavHtml_(payloadB64) {
         btn.disabled=true;
         btn.textContent='Chargement...';
         if(status) status.textContent='Chargement des statistiques...';
-        [google.script.run](http://google.script.run).withSuccessHandler(function(s){
+        google.script.run.withSuccessHandler(function(s){
           stats=s||null;
           if(status) status.textContent='';
           renderStatsInto_(out, stats);
@@ -6401,10 +6388,10 @@ function getSavHtml_(payloadB64) {
 
       function checkbox(label, checked, onChange){
         var wrap=document.createElement('div');
-        [wrap.style](http://wrap.style).padding='10px 12px';
-        [wrap.style](http://wrap.style).border='1px solid var(--border)';
-        [wrap.style](http://wrap.style).borderRadius='12px';
-        [wrap.style](http://wrap.style).background='rgba(255,255,255,.03)';
+        wrap.style.padding='10px 12px';
+        wrap.style.border='1px solid var(--border)';
+        wrap.style.borderRadius='12px';
+        wrap.style.background='rgba(255,255,255,.03)';
         var id='cb_'+Math.random().toString(36).slice(2);
         wrap.innerHTML =
           '<label style="margin:0;display:flex;align-items:flex-start;gap:8px;font-size:13px;font-weight:800;color:var(--text);text-transform:none;letter-spacing:0" for="'+id+'">'+
@@ -6451,7 +6438,7 @@ function getSavHtml_(payloadB64) {
             function(val, done){
               if(!val){ done(); return; } // on ne gère pas la décoche (pas de retour arrière)
               var emailTo = prompt('Email destinataire (optionnel) pour envoyer l\\'étiquette retour en PDF :','')||'';
-              [google.script.run](http://google.script.run).withSuccessHandler(function(){
+              google.script.run.withSuccessHandler(function(){
                 reloadList(function(){
                   var u=findByNumero_(allCases, c.numero);
                   if(u){ setCurrent(u); viewDetail(u); }
@@ -6467,7 +6454,7 @@ function getSavHtml_(payloadB64) {
         }else{
         if(pid==='PROC_1_POSTAL'){
           btn('Demande retour plaque (PDF) →', function(b, oldLabel){
-            [google.script.run](http://google.script.run).withSuccessHandler(function(res){
+            google.script.run.withSuccessHandler(function(res){
               if(res&&res.ok){
                 alert(
                   'PDF généré : '+(res.fileName||'PDF')+
@@ -6484,7 +6471,7 @@ function getSavHtml_(payloadB64) {
             }).savGenerateProc1PostalRequestPdf({sheet:c.sheet,row:c.row,numero:c.numero});
           });
           btn('Feuille retour plaque (PDF) →', function(b, oldLabel){
-            [google.script.run](http://google.script.run).withSuccessHandler(function(res){
+            google.script.run.withSuccessHandler(function(res){
               if(res&&res.ok){
                 alert(
                   'Feuille générée : '+(res.fileName||'PDF')+
@@ -6502,7 +6489,7 @@ function getSavHtml_(payloadB64) {
           });
         }
         btn('En attente de réception →', function(b, oldLabel){
-          [google.script.run](http://google.script.run).withSuccessHandler(function(){
+          google.script.run.withSuccessHandler(function(){
             reloadList(function(){
               var u=findByNumero_(allCases, c.numero);
               if(u){ setCurrent(u); viewDetail(u); }
@@ -6520,7 +6507,7 @@ function getSavHtml_(payloadB64) {
         // Procédure 1 (postal) : pas de réception atelier
         if(pid!=='PROC_1_POSTAL'){
           btn('Bon de retour (PDF) →', function(b, oldLabel){
-            [google.script.run](http://google.script.run)
+            google.script.run
               .withSuccessHandler(function(res){
                 if(res && res.ok){
                   alert(
@@ -6544,7 +6531,7 @@ function getSavHtml_(payloadB64) {
       }
       if(e===ETAT_RECU){
         btn('Passer en expertise →', function(b, oldLabel){
-          [google.script.run](http://google.script.run).withSuccessHandler(function(){
+          google.script.run.withSuccessHandler(function(){
             reloadList(function(){
               var u=findByNumero_(allCases, c.numero);
               if(u){ setCurrent(u); viewDetail(u); }
@@ -6573,7 +6560,7 @@ function getSavHtml_(payloadB64) {
           try{ window.__lastCentraleAchat=String(centrale||'').trim(); }catch(e){}
           var facture=prompt('Facture d\\'achat centrale (optionnel) ?')||'';
           var notes=prompt('Notes pour l\\'avoir (optionnel) ?')||'';
-          [google.script.run](http://google.script.run).withSuccessHandler(function(res){
+          google.script.run.withSuccessHandler(function(res){
             if(res && res.ok){
               reloadList(function(){
                 showTab('avoir');
@@ -6590,7 +6577,7 @@ function getSavHtml_(payloadB64) {
         btn('Bon de transport / échange', function(b, oldLabel){ reenable_(b, oldLabel); openTransportForm(c,'Échange'); });
         btn('Réparation (transport)', function(b, oldLabel){ reenable_(b, oldLabel); openTransportForm(c,'Réparation'); });
         btn('En attente pièces', function(b, oldLabel){
-          [google.script.run](http://google.script.run).withSuccessHandler(function(){
+          google.script.run.withSuccessHandler(function(){
             reloadList(function(){
               var u=findByNumero_(allCases, c.numero);
               if(u){ setCurrent(u); viewDetail(u); }
@@ -6611,7 +6598,7 @@ function getSavHtml_(payloadB64) {
             showErr('Adresse de destination requise (hors garantie).');
             return;
           }
-          [google.script.run](http://google.script.run).withSuccessHandler(function(res){
+          google.script.run.withSuccessHandler(function(res){
             try{
               if(res && res.ok && res.fileUrl){
                 alert(
@@ -6649,14 +6636,14 @@ function getSavHtml_(payloadB64) {
       }
       if((e===ETAT_TR_L||e===ETAT_AVOIR||e===ETAT_HG)&&e!==ETAT_ARCH){
         btn('Archiver', function(b, oldLabel){
-          [google.script.run](http://google.script.run).withSuccessHandler(function(){ reloadList(); setCurrent(null); showTab('list');})
+          google.script.run.withSuccessHandler(function(){ reloadList(); setCurrent(null); showTab('list');})
           .withFailureHandler(function(e){ reenable_(b, oldLabel); showErr(e); })
           .savUpdateEtat({sheet:c.sheet,row:c.row,etat:ETAT_ARCH});
         });
         // Rapport technique : utile côté Distributeur uniquement (pas Marketplace)
         if(c.type==='Distributeur'){
           btn('Rapport technique (PDF) →', function(b, oldLabel){
-            [google.script.run](http://google.script.run).withSuccessHandler(function(res){
+            google.script.run.withSuccessHandler(function(res){
               if(res&&res.ok){
                 alert(
                   'Rapport généré : '+(res.fileName||'PDF')+
@@ -6686,7 +6673,7 @@ function getSavHtml_(payloadB64) {
         '<label>Technicien</label><input type="text" id="rTech" />'+
         '<div style="margin-top:12px"><button class="btn primary" type="button" id="rSave">Enregistrer</button></div>';
       document.getElementById('rSave').onclick=function(){
-        [google.script.run](http://google.script.run).withSuccessHandler(function(){
+        google.script.run.withSuccessHandler(function(){
           reloadList(function(){
             var u=findByNumero_(allCases, c.numero);
             if(u){ setCurrent(u); viewDetail(u); }
@@ -6706,7 +6693,7 @@ function getSavHtml_(payloadB64) {
     function openExpertiseForm(c){
       document.getElementById('mainTitle').textContent='Expertise';
       document.getElementById('mainBody').innerHTML='<div class="muted">Chargement...</div>';
-      [google.script.run](http://google.script.run).withSuccessHandler(function(last){
+      google.script.run.withSuccessHandler(function(last){
         last=last||{};
         document.getElementById('mainBody').innerHTML=
           '<label>Date expertise</label><input type="date" id="eDate" value="'+esc(last.dateExpertise||'')+'" />'+
@@ -6736,7 +6723,7 @@ function getSavHtml_(payloadB64) {
           btn.disabled=true;
           var old=btn.textContent;
           btn.textContent='...';
-          [google.script.run](http://google.script.run).withSuccessHandler(function(){
+          google.script.run.withSuccessHandler(function(){
             reloadList(function(){
               var u=findByNumero_(allCases, c.numero);
               if(u){ setCurrent(u); viewDetail(u); }
@@ -6799,7 +6786,7 @@ function getSavHtml_(payloadB64) {
       document.getElementById('tSave').onclick=function(){
         var btn=document.getElementById('tSave');
         if(btn){ btn.disabled=true; btn.textContent='Création...'; }
-        [google.script.run](http://google.script.run)
+        google.script.run
           .withSuccessHandler(function(res){
             if(btn){ btn.disabled=false; btn.textContent='Créer demande'; }
             // Si une étiquette a été générée, on affiche le lien PDF cliquable.
@@ -6924,18 +6911,18 @@ function getSavHtml_(payloadB64) {
                 times.push(hh+':'+mm);
               }
             }
-            sel.innerHTML = '<option value="">—</option>' + [times.map](http://times.map)(function(t){ return '<option value="'+esc(t)+'">'+esc(t)+'</option>'; }).join('');
+            sel.innerHTML = '<option value="">—</option>' + times.map(function(t){ return '<option value="'+esc(t)+'">'+esc(t)+'</option>'; }).join('');
           }
           var bOpen=document.getElementById('rdvOpenTab');
           if(bOpen) bOpen.onclick=function(){ showTab('rdv'); };
 
           // load existing RDV if any
-          [google.script.run](http://google.script.run).withSuccessHandler(function(r){
+          google.script.run.withSuccessHandler(function(r){
             if(!r) return;
             try{
-              if(document.getElementById('rdvDate') && [r.date](http://r.date)){
+              if(document.getElementById('rdvDate') && r.date){
                 // accept either yyyy-mm-dd or dd/mm/yyyy (we keep best effort)
-                if(String([r.date](http://r.date)||'').indexOf('-')>0) document.getElementById('rdvDate').value=String([r.date](http://r.date));
+                if(String(r.date||'').indexOf('-')>0) document.getElementById('rdvDate').value=String(r.date);
               }
               if(document.getElementById('rdvHeure') && r.heure) document.getElementById('rdvHeure').value=String(r.heure);
               if(document.getElementById('rdvEtat') && r.etat) document.getElementById('rdvEtat').value=String(r.etat);
@@ -6954,7 +6941,7 @@ function getSavHtml_(payloadB64) {
               if(!date || !heure){ showErr('Date et heure RDV requises.'); return; }
               bSave.disabled=true;
               if(res) res.textContent='Enregistrement...';
-              [google.script.run](http://google.script.run).withSuccessHandler(function(r){
+              google.script.run.withSuccessHandler(function(r){
                 bSave.disabled=false;
                 if(r&&r.ok){
                   if(res) res.textContent='OK — RDV enregistré.';
@@ -6989,8 +6976,8 @@ function getSavHtml_(payloadB64) {
         try{
           var tools=document.getElementById('caseTools');
           if(tools){
-            [tools.style.gap](http://tools.style.gap)='10px';
-            [tools.style](http://tools.style).flexWrap='wrap';
+            tools.style.gap='10px';
+            tools.style.flexWrap='wrap';
             tools.innerHTML =
               '<button class="btn" type="button" id="btnTimeline">Historique / étapes</button>'+
               '<button class="btn" type="button" id="btnTimelinePrint">Imprimer</button>'+
@@ -7004,7 +6991,7 @@ function getSavHtml_(payloadB64) {
             if(!wrap) return;
             if(wrap.getAttribute('data-loaded')==='1'){ if(cb) cb(); return; }
             wrap.innerHTML='<div class="muted">Chargement de l\\'historique...</div>';
-            [google.script.run](http://google.script.run).withSuccessHandler(function(r){
+            google.script.run.withSuccessHandler(function(r){
               if(r&&r.ok){
                 wrap.setAttribute('data-loaded','1');
                 wrap.innerHTML = r.html || '<div class="muted">Aucun historique.</div>';
@@ -7031,7 +7018,7 @@ function getSavHtml_(payloadB64) {
             btnP.onclick=function(){
               ensureTimeline_(function(){
                 if(!wrap) return;
-                var w=[window.open](http://window.open)('','_blank');
+                var w=window.open('','_blank');
                 if(!w) return;
                 w.document.write('<!doctype html><meta charset="utf-8"><title>Historique '+esc(c.numero)+'</title>');
                 w.document.write('<style>body{font-family:Arial,sans-serif;margin:24px} .btn{display:none} a{color:#2563eb} table{page-break-inside:auto} tr{page-break-inside:avoid}</style>');
@@ -7044,7 +7031,7 @@ function getSavHtml_(payloadB64) {
           }
           if(btnPdf){
             btnPdf.onclick=function(){
-              [google.script.run](http://google.script.run).withSuccessHandler(function(res){
+              google.script.run.withSuccessHandler(function(res){
                 if(res&&res.ok){
                   alert('PDF généré : '+(res.fileName||'PDF')+'\\nLien : '+(res.fileUrl||'')+'\\nDossier Drive : '+(res.folderUrl||''));
                 }else{
@@ -7075,7 +7062,7 @@ function getSavHtml_(payloadB64) {
             bRef.disabled=true;
             var v=inp.value||'';
             if(res) res.textContent='Enregistrement...';
-            [google.script.run](http://google.script.run).withSuccessHandler(function(r){
+            google.script.run.withSuccessHandler(function(r){
               bRef.disabled=false;
               if(r&&r.ok){
                 if(res) res.textContent='OK';
@@ -7097,7 +7084,7 @@ function getSavHtml_(payloadB64) {
       }
 
       // Synchronisation logistique : affiche date départ / livraison + checkbox "colis prêt"
-      [google.script.run](http://google.script.run).withSuccessHandler(function(li){
+      google.script.run.withSuccessHandler(function(li){
         if(!li){
           var el=document.getElementById('logInfo');
           if(el) el.textContent='';
@@ -7126,10 +7113,10 @@ function getSavHtml_(payloadB64) {
           if(cb){
             cb.onchange=function(){
               cb.disabled=true;
-              [google.script.run](http://google.script.run).withSuccessHandler(function(){
+              google.script.run.withSuccessHandler(function(){
                 cb.disabled=false;
                 // refresh log info
-                [google.script.run](http://google.script.run).withSuccessHandler(function(li2){
+                google.script.run.withSuccessHandler(function(li2){
                   if(li2){
                     var info=[];
                     if(li2.statutLog) info.push('Logistique : '+li2.statutLog);
@@ -7151,13 +7138,13 @@ function getSavHtml_(payloadB64) {
 
       // Messagerie Marketplace (dossier Marketplace)
       if(c.type!=='Distributeur'){
-        [google.script.run](http://google.script.run).withSuccessHandler(function(msgs){
+        google.script.run.withSuccessHandler(function(msgs){
           msgs=msgs||[];
           var box=document.getElementById('mpTicketWrap');
           if(!box) return;
           var unread=0;
           msgs.forEach(function(m){
-            if(String(m.sens||'')==='IN' && String([m.lu](http://m.lu)||'').toUpperCase()!=='OUI') unread++;
+            if(String(m.sens||'')==='IN' && String(m.lu||'').toUpperCase()!=='OUI') unread++;
           });
           var h='';
           h+='<div style="padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:rgba(255,255,255,.03)">';
@@ -7178,7 +7165,7 @@ function getSavHtml_(payloadB64) {
               var out=(String(m.sens||'')==='OUT');
               h+='<div style="margin-top:8px;padding:10px 12px;border-radius:12px;border:1px solid '+(out?'rgba(34,197,94,.35)':'rgba(245,158,11,.35)')+';background:'+(out?'rgba(34,197,94,.08)':'rgba(245,158,11,.08)')+'">';
               h+='<div style="font-size:12px;font-weight:900">'+(out?'SAV → Client':'Client → SAV')+'</div>';
-              h+='<div class="muted" style="margin-top:2px">'+esc([m.date](http://m.date)||'')+' · '+esc(m.auteur||'')+'</div>';
+              h+='<div class="muted" style="margin-top:2px">'+esc(m.date||'')+' · '+esc(m.auteur||'')+'</div>';
               h+='<div style="margin-top:8px;white-space:pre-wrap;font-size:13px">'+esc(m.message||'')+'</div>';
               h+='</div>';
             }
@@ -7199,7 +7186,7 @@ function getSavHtml_(payloadB64) {
 
           // marque les messages IN comme lus (ticket traité) dès ouverture du dossier
           if(unread){
-            [google.script.run](http://google.script.run).withSuccessHandler(function(){ try{ refreshTabBadges_(); }catch(e){} }).withFailureHandler(function(){}).savMpMarkAllRead({numero:c.numero});
+            google.script.run.withSuccessHandler(function(){ try{ refreshTabBadges_(); }catch(e){} }).withFailureHandler(function(){}).savMpMarkAllRead({numero:c.numero});
           }
 
           var send=document.getElementById('dMpSend');
@@ -7211,7 +7198,7 @@ function getSavHtml_(payloadB64) {
               var old=send.textContent;
               send.textContent='...';
               var payload={numero:c.numero,marketplace:c.marketplace,clientEmail:c.clientEmail,sens:'OUT',message:txt,auteur:'',sheet:c.sheet,rowMain:c.row};
-              [google.script.run](http://google.script.run).withSuccessHandler(function(res){
+              google.script.run.withSuccessHandler(function(res){
                 send.disabled=false;
                 send.textContent=old;
                 if(res&&res.ok){
@@ -7268,7 +7255,7 @@ function getSavHtml_(payloadB64) {
 
       var fetch = (mode==='pdc') ? 'pdc' : 'sav';
       var run = (fetch==='pdc')
-        ? [google.script.run](http://google.script.run).withFailureHandler(showErr).withSuccessHandler(function(res){
+        ? google.script.run.withFailureHandler(showErr).withSuccessHandler(function(res){
             res=res||{};
             var rows=res.rows||[];
             var hasMore=!!res.hasMore;
@@ -7318,7 +7305,7 @@ function getSavHtml_(payloadB64) {
                 var s=String(x.statut||'');
                 var klass = (s===LOG_A?'warn':(s===LOG_E?'':'ok'));
                 if(s===LOG_X) klass='muted';
-                h += '<div class="row"><div class="name">'+esc([x.id](http://x.id))+'</div><span class="badge '+klass+'">'+esc(s)+'</span></div>';
+                h += '<div class="row"><div class="name">'+esc(x.id)+'</div><span class="badge '+klass+'">'+esc(s)+'</span></div>';
                 h += '<div class="muted">Créé le '+esc(x.dateCreation||'')+'</div>';
             h += '<label>Point de départ</label><textarea id="pdcFrom_'+x.pdcRow+'">'+esc(x.pointDepart||'')+'</textarea>';
             h += '<label>Adresse arrivée</label><textarea id="pdcTo_'+x.pdcRow+'">'+esc(x.adresseArrivee||'')+'</textarea>';
@@ -7361,7 +7348,7 @@ function getSavHtml_(payloadB64) {
             var bn=document.getElementById('pdcNew');
             if(bn){
               bn.onclick=function(){
-                [google.script.run](http://google.script.run).withSuccessHandler(function(){ renderLogistique(); }).withFailureHandler(showErr).pdcCreate({transporteur:'DISTRIBUTEUR',poids:'',tracking:'',notes:''});
+                google.script.run.withSuccessHandler(function(){ renderLogistique(); }).withFailureHandler(showErr).pdcCreate({transporteur:'DISTRIBUTEUR',poids:'',tracking:'',notes:''});
               };
             }
             // rebind nav buttons
@@ -7392,7 +7379,7 @@ function getSavHtml_(payloadB64) {
                 if(act==='cancel'){
                   if(!confirm('Annuler cette demande PDC ?')) return;
                   var reason=prompt('Motif (optionnel) ?')||'';
-                  [google.script.run](http://google.script.run).withSuccessHandler(function(){ renderLogistique(); }).withFailureHandler(showErr).pdcCancel({pdcRow:row,reason:reason});
+                  google.script.run.withSuccessHandler(function(){ renderLogistique(); }).withFailureHandler(showErr).pdcCancel({pdcRow:row,reason:reason});
                   return;
                 }
                 var payload={
@@ -7413,12 +7400,12 @@ function getSavHtml_(payloadB64) {
                   if(!dl) return;
                   payload.dateLivraison=dl;
                 }
-                [google.script.run](http://google.script.run).withSuccessHandler(function(){ renderLogistique(); }).withFailureHandler(showErr).pdcSave(payload);
+                google.script.run.withSuccessHandler(function(){ renderLogistique(); }).withFailureHandler(showErr).pdcSave(payload);
               };
             });
             document.querySelectorAll('input[data-pdc-files="1"]').forEach(function(inp){
               inp.onchange=function(){
-                var m=String([inp.id](http://inp.id)||'').match(/^pdcF_(\d+)$/);
+                var m=String(inp.id||'').match(/^pdcF_(\d+)$/);
                 if(!m) return;
                 var row=Number(m[1]||0);
                 var fl=(inp.files&&inp.files.length)?Array.from(inp.files):[];
@@ -7426,7 +7413,7 @@ function getSavHtml_(payloadB64) {
                 var res=document.getElementById('pdcR_'+row);
                 if(res) res.textContent='Envoi...';
                 uploadFiles_(fl, function(payloadFiles){
-                  [google.script.run](http://google.script.run).withSuccessHandler(function(u){
+                  google.script.run.withSuccessHandler(function(u){
                     if(u&&u.ok){
                       if(res) res.textContent='OK — '+(u.created||0)+' fichier(s) archivé(s). '+(u.folderUrl?('Drive : '+u.folderUrl):'');
                       try{ inp.value=''; }catch(e){}
@@ -7439,7 +7426,7 @@ function getSavHtml_(payloadB64) {
               };
             });
           }).pdcListPage({tab:(window.__pdcTab||'open'),limit:(window.__pdcLimit||50),offset:(window.__pdcOffset||0),year:(window.__pdcYear===undefined?new Date().getFullYear():window.__pdcYear)})
-        : [google.script.run](http://google.script.run).withSuccessHandler(function(rows){
+        : google.script.run.withSuccessHandler(function(rows){
         if(!rows||!rows.length){
           document.getElementById('mainBody').innerHTML='<div class="muted">Aucune demande en cours (toutes les lignes sont livrées, ou aucune demande transport).</div>';
           return;
@@ -7596,7 +7583,7 @@ function getSavHtml_(payloadB64) {
             var old=b.textContent;
             b.textContent='...';
             var lr=Number(b.getAttribute('data-row'));
-            [google.script.run](http://google.script.run).withSuccessHandler(function(){ renderLogistique(); }).withFailureHandler(function(e){
+            google.script.run.withSuccessHandler(function(){ renderLogistique(); }).withFailureHandler(function(e){
               b.disabled=false;
               b.textContent=old;
               showErr(e);
@@ -7617,7 +7604,7 @@ function getSavHtml_(payloadB64) {
             var old=b.textContent;
             b.textContent='...';
             var lr=Number(b.getAttribute('data-row'));
-            [google.script.run](http://google.script.run).withSuccessHandler(function(){ renderLogistique(); }).withFailureHandler(function(e){
+            google.script.run.withSuccessHandler(function(){ renderLogistique(); }).withFailureHandler(function(e){
               b.disabled=false;
               b.textContent=old;
               showErr(e);
@@ -7637,7 +7624,7 @@ function getSavHtml_(payloadB64) {
             b.disabled=true;
             var old=b.textContent;
             b.textContent='...';
-            [google.script.run](http://google.script.run).withSuccessHandler(function(){ renderLogistique(); }).withFailureHandler(function(e){
+            google.script.run.withSuccessHandler(function(){ renderLogistique(); }).withFailureHandler(function(e){
               b.disabled=false;
               b.textContent=old;
               showErr(e);
@@ -7652,7 +7639,7 @@ function getSavHtml_(payloadB64) {
             var old=b.textContent;
             b.textContent='...';
             var lr=Number(b.getAttribute('data-row'));
-            [google.script.run](http://google.script.run).withSuccessHandler(function(){ renderLogistique(); }).withFailureHandler(function(e){
+            google.script.run.withSuccessHandler(function(){ renderLogistique(); }).withFailureHandler(function(e){
               b.disabled=false;
               b.textContent=old;
               showErr(e);
@@ -7667,7 +7654,7 @@ function getSavHtml_(payloadB64) {
         // Upload preuve livraison (statut expédié)
         document.querySelectorAll('input[data-proof="1"]').forEach(function(inp){
           inp.onchange=function(){
-            var m = String([inp.id](http://inp.id)||'').match(/^pf_(\d+)$/);
+            var m = String(inp.id||'').match(/^pf_(\d+)$/);
             if(!m) return;
             var lr = Number(m[1]||0);
             if(!lr) return;
@@ -7675,7 +7662,7 @@ function getSavHtml_(payloadB64) {
             if(!files || !files.length) return;
             inp.disabled=true;
             uploadFiles_(files, function(payloadFiles){
-              [google.script.run](http://google.script.run).withSuccessHandler(function(){
+              google.script.run.withSuccessHandler(function(){
                 inp.disabled=false;
                 renderLogistique();
               }).withFailureHandler(function(e){
@@ -7748,7 +7735,7 @@ function getSavHtml_(payloadB64) {
           var trp = prompt('Transporteur (optionnel) ?', '') || '';
           var trk = prompt('Tracking (optionnel) ?', '') || '';
           var notes = prompt('Notes (optionnel) ?', '') || '';
-          [google.script.run](http://google.script.run).withSuccessHandler(function(r){
+          google.script.run.withSuccessHandler(function(r){
             if(r&&r.ok){ renderLogistiqueOther_(); }
             else showErr((r&&r.message)?r.message:'Erreur création');
           }).withFailureHandler(showErr).savOtherLogCreate({
@@ -7764,7 +7751,7 @@ function getSavHtml_(payloadB64) {
         };
       }
 
-      [google.script.run](http://google.script.run).withSuccessHandler(function(rows){
+      google.script.run.withSuccessHandler(function(rows){
         rows = rows || [];
         var h = top +
           '<div class="evt" style="margin-bottom:14px">' +
@@ -7778,8 +7765,8 @@ function getSavHtml_(payloadB64) {
         }else{
           rows.forEach(function(x){
             h += '<div class="evt" style="margin-bottom:14px">';
-            h += '<div class="row"><div class="name">'+esc([x.id](http://x.id))+'</div><span class="badge">'+esc(x.sens||type)+'</span></div>';
-            h += '<div class="muted">Date : '+esc([x.date](http://x.date)||'')+'</div>';
+            h += '<div class="row"><div class="name">'+esc(x.id)+'</div><span class="badge">'+esc(x.sens||type)+'</span></div>';
+            h += '<div class="muted">Date : '+esc(x.date||'')+'</div>';
             h += '<label>Référence / client</label><input type="text" id="othRef_'+x.otherRow+'" value="'+esc(x.ref||'')+'" />';
             h += '<label>Point départ</label><textarea id="othPd_'+x.otherRow+'">'+esc(x.pointDepart||'')+'</textarea>';
             h += '<label>Adresse arrivée</label><textarea id="othAa_'+x.otherRow+'">'+esc(x.adresseArrivee||'')+'</textarea>';
@@ -7816,13 +7803,13 @@ function getSavHtml_(payloadB64) {
             if(!row) return;
             if(act==='del'){
               if(!confirm('Supprimer cette ligne ?')) return;
-              [google.script.run](http://google.script.run).withSuccessHandler(function(r){
+              google.script.run.withSuccessHandler(function(r){
                 if(r&&r.ok) renderLogistiqueOther_();
                 else showErr((r&&r.message)?r.message:'Erreur suppression');
               }).withFailureHandler(showErr).savOtherLogDelete({otherRow:row});
               return;
             }
-            [google.script.run](http://google.script.run).withSuccessHandler(function(r){
+            google.script.run.withSuccessHandler(function(r){
               if(r&&r.ok) renderLogistiqueOther_();
               else showErr((r&&r.message)?r.message:'Erreur');
             }).withFailureHandler(showErr).savOtherLogSave({
@@ -7842,7 +7829,7 @@ function getSavHtml_(payloadB64) {
     function renderMarketplace(){
       document.getElementById('mainTitle').textContent='Marketplace — suivi & messages client';
       document.getElementById('mainBody').innerHTML='<div class="muted">Chargement...</div>';
-      [google.script.run](http://google.script.run).withSuccessHandler(function(rows){
+      google.script.run.withSuccessHandler(function(rows){
         rows=rows||[];
         if(!rows.length){
           document.getElementById('mainBody').innerHTML='<div class="muted">Aucun dossier Marketplace.</div>';
@@ -7882,7 +7869,7 @@ function getSavHtml_(payloadB64) {
     function renderAvoirTickets(){
       document.getElementById('mainTitle').textContent='Avoir — tickets à traiter';
       document.getElementById('mainBody').innerHTML='<div class="muted">Chargement...</div>';
-      [google.script.run](http://google.script.run).withSuccessHandler(function(groups){
+      google.script.run.withSuccessHandler(function(groups){
         groups=groups||[];
         if(!groups.length){
           document.getElementById('mainBody').innerHTML='<div class="muted">Aucun ticket avoir en attente.</div>';
@@ -7955,12 +7942,12 @@ function getSavHtml_(payloadB64) {
             var resEl=document.getElementById('avtRes_'+safe);
             if(resEl) resEl.textContent='Envoi...';
             uploadFiles_(fl, function(payloadFiles){
-              [google.script.run](http://google.script.run).withSuccessHandler(function(u){
+              google.script.run.withSuccessHandler(function(u){
                 if(u&&u.ok){
                   if(resEl) resEl.textContent='OK — '+(u.created||0)+' fichier(s) archivé(s). '+(u.folderUrl?('Drive : '+u.folderUrl):'');
                   try{ input.value=''; }catch(e){}
                   bindDropZone_('avtDrop_'+safe, 'avtFiles_'+safe);
-                  [google.script.run](http://google.script.run).withSuccessHandler(function(){ renderAvoirTickets(); }).withFailureHandler(showErr).savSetAvoirTicketStatut({ticketRow:ticketRow,statut:'Terminé'});
+                  google.script.run.withSuccessHandler(function(){ renderAvoirTickets(); }).withFailureHandler(showErr).savSetAvoirTicketStatut({ticketRow:ticketRow,statut:'Terminé'});
                 }else{
                   showErr((u&&u.message)?u.message:'Erreur upload');
                   if(resEl) resEl.textContent='';
@@ -7975,7 +7962,7 @@ function getSavHtml_(payloadB64) {
             var ticketRow=Number(b.getAttribute('data-ticket-row')||0);
             if(!ticketRow) return;
             if(!confirm('Valider que l\\'avoir est fait (ticket terminé) ?')) return;
-            [google.script.run](http://google.script.run).withSuccessHandler(function(){
+            google.script.run.withSuccessHandler(function(){
               renderAvoirTickets();
             }).withFailureHandler(showErr).savSetAvoirTicketStatut({ticketRow:ticketRow,statut:'Terminé'});
           };
@@ -7986,7 +7973,7 @@ function getSavHtml_(payloadB64) {
             var ticketRow=Number(b.getAttribute('data-ticket-row')||0);
             if(!ticketRow) return;
             if(!confirm('Supprimer cette demande d\\'avoir ?')) return;
-            [google.script.run](http://google.script.run).withSuccessHandler(function(res){
+            google.script.run.withSuccessHandler(function(res){
               if(res && res.ok){
                 renderAvoirTickets();
               }else{
@@ -8002,7 +7989,7 @@ function getSavHtml_(payloadB64) {
       var box=document.getElementById('mpDetail');
       if(!box) return;
       box.innerHTML='<div class="muted">Chargement du fil...</div>';
-      [google.script.run](http://google.script.run).withSuccessHandler(function(msgs){
+      google.script.run.withSuccessHandler(function(msgs){
         msgs=msgs||[];
         var h='';
         h+='<div style="font-weight:900;margin-bottom:6px">Dossier '+esc(c.numero)+'</div>';
@@ -8016,7 +8003,7 @@ function getSavHtml_(payloadB64) {
             var out=(String(m.sens||'')==='OUT');
             h+='<div style="margin-bottom:10px;padding:10px 12px;border-radius:12px;border:1px solid '+(out?'rgba(34,197,94,.35)':'rgba(245,158,11,.35)')+';background:'+(out?'rgba(34,197,94,.08)':'rgba(245,158,11,.08)')+'">';
             h+='<div style="font-size:12px;font-weight:900">'+(out?'À transmettre au client':'Message du client')+'</div>';
-            h+='<div class="muted" style="margin-top:2px">'+esc([m.date](http://m.date)||'')+' · '+esc(m.auteur||'')+'</div>';
+            h+='<div class="muted" style="margin-top:2px">'+esc(m.date||'')+' · '+esc(m.auteur||'')+'</div>';
             h+='<div style="margin-top:8px;white-space:pre-wrap;font-size:13px">'+esc(m.message||'')+'</div>';
             h+='</div>';
           });
@@ -8056,7 +8043,7 @@ function getSavHtml_(payloadB64) {
             sheet:c.sheet,
             rowMain:c.row
           };
-          [google.script.run](http://google.script.run).withSuccessHandler(function(res){
+          google.script.run.withSuccessHandler(function(res){
             if(res&&res.ok){
               document.getElementById('mpRes').textContent='OK — message enregistré.';
               openMpThread(c);
@@ -8073,7 +8060,7 @@ function getSavHtml_(payloadB64) {
           if(!fl.length){ showErr('Aucun fichier sélectionné.'); return; }
           document.getElementById('mpUpRes').textContent='Envoi...';
           uploadFiles_(fl, function(payloadFiles){
-            [google.script.run](http://google.script.run).withSuccessHandler(function(u){
+            google.script.run.withSuccessHandler(function(u){
               if(u&&u.ok){
                 document.getElementById('mpUpRes').textContent='OK — '+(u.created||0)+' fichier(s) archivé(s). '+(u.folderUrl?('Drive : '+u.folderUrl):'');
                 // reset input + zone
@@ -8095,14 +8082,14 @@ function getSavHtml_(payloadB64) {
       // (utile si le payload initial est incomplet ou si la liste est très longue).
       if(!modelsLoadedOnce && !(models && models.length)){
         document.getElementById('mainBody').innerHTML='<div class="muted">Chargement de la liste des modèles...</div>';
-        [google.script.run](http://google.script.run).withSuccessHandler(function(list){
+        google.script.run.withSuccessHandler(function(list){
           models=(list||[]).slice().sort();
           modelsLoadedOnce=true;
           renderNewForm();
         }).withFailureHandler(showErr).savGetModels();
         return;
       }
-      var opts=[models.map](http://models.map)(function(m){return '<option value="'+esc(m)+'">'+esc(m)+'</option>';}).join('');
+      var opts=models.map(function(m){return '<option value="'+esc(m)+'">'+esc(m)+'</option>';}).join('');
       var distList=[
         'Leroy Merlin',
         'Castorama',
@@ -8113,13 +8100,13 @@ function getSavHtml_(payloadB64) {
         'Intermarché',
         'Carrefour',
         'Auchan',
-        '[E.Leclerc](http://E.Leclerc)',
+        'E.Leclerc',
         'Darty',
         'Amazon',
         'Cdiscount',
         'La Redoute'
       ];
-      var distOpts = '<option value="">—</option>' + [distList.map](http://distList.map)(function(n){ return '<option value="'+esc(n)+'">'+esc(n)+'</option>'; }).join('') + '<option value="__autre__">Autre...</option>';
+      var distOpts = '<option value="">—</option>' + distList.map(function(n){ return '<option value="'+esc(n)+'">'+esc(n)+'</option>'; }).join('') + '<option value="__autre__">Autre...</option>';
       var mpList=[
         'Boulanger',
         'Darty',
@@ -8137,7 +8124,7 @@ function getSavHtml_(payloadB64) {
         'Amazon',
         'eBay'
       ];
-      var mpOpts = '<option value="">—</option>' + [mpList.map](http://mpList.map)(function(n){ return '<option value="'+esc(n)+'">'+esc(n)+'</option>'; }).join('') + '<option value="__autre__">Autre...</option>';
+      var mpOpts = '<option value="">—</option>' + mpList.map(function(n){ return '<option value="'+esc(n)+'">'+esc(n)+'</option>'; }).join('') + '<option value="__autre__">Autre...</option>';
       var PANNE_DATA={
         "CLIMATISEURS":{
           "Pannes électriques":[
@@ -8370,10 +8357,10 @@ function getSavHtml_(payloadB64) {
         var row=document.createElement('div');
         row.setAttribute('data-pdc-piece','1');
         row.className='row';
-        [row.style.gap](http://row.style.gap)='10px';
-        [row.style](http://row.style).flexWrap='wrap';
-        [row.style](http://row.style).alignItems='center';
-        [row.style](http://row.style).marginTop='8px';
+        row.style.gap='10px';
+        row.style.flexWrap='wrap';
+        row.style.alignItems='center';
+        row.style.marginTop='8px';
         row.innerHTML =
           '<input class="pdcRef" placeholder="Référence (ex: 12345)" style="flex:1;min-width:180px" value="'+esc(ref||'')+'" />' +
           '<input class="pdcDes" placeholder="Désignation" style="flex:2;min-width:240px" value="'+esc(des||'')+'" />' +
@@ -8486,7 +8473,7 @@ function getSavHtml_(payloadB64) {
 
       document.getElementById('btnReloadModels').onclick=function(){
         document.getElementById('btnReloadModels').textContent='...';
-        [google.script.run](http://google.script.run).withSuccessHandler(function(list){
+        google.script.run.withSuccessHandler(function(list){
           models=(list||[]).slice().sort();
           modelsLoadedOnce=true;
           renderNewForm();
@@ -8500,7 +8487,7 @@ function getSavHtml_(payloadB64) {
       if(btnReloadModelsMp){
         btnReloadModelsMp.onclick=function(){
           btnReloadModelsMp.textContent='...';
-          [google.script.run](http://google.script.run).withSuccessHandler(function(list){
+          google.script.run.withSuccessHandler(function(list){
             models=(list||[]).slice().sort();
             modelsLoadedOnce=true;
             renderNewForm();
@@ -8549,8 +8536,8 @@ function getSavHtml_(payloadB64) {
       document.getElementById('btnAddModel').onclick=function(){
         var n=document.getElementById('newModel').value.trim();
         if(!n)return;
-        [google.script.run](http://google.script.run).withSuccessHandler(function(res){
-          if(res&&res.ok){ models.push(n); models.sort(); document.getElementById('dMod').innerHTML='<option value="">—</option>'+[models.map](http://models.map)(function(m){return '<option value="'+esc(m)+'">'+esc(m)+'</option>';}).join(''); document.getElementById('newModel').value=''; }
+        google.script.run.withSuccessHandler(function(res){
+          if(res&&res.ok){ models.push(n); models.sort(); document.getElementById('dMod').innerHTML='<option value="">—</option>'+models.map(function(m){return '<option value="'+esc(m)+'">'+esc(m)+'</option>';}).join(''); document.getElementById('newModel').value=''; }
         }).withFailureHandler(showErr).savAddModele(n);
       };
 
@@ -8581,7 +8568,7 @@ function getSavHtml_(payloadB64) {
           if(!dPan) miss.push('Panne constatée');
           if(!String(document.getElementById('dSer').value||'').trim()) miss.push('Numéro de série');
           if(miss.length){ done_(); showErr('Impossible de valider la demande : champs obligatoires manquants — '+miss.join(', ')); return; }
-          [google.script.run](http://google.script.run).withSuccessHandler(function(res){
+          google.script.run.withSuccessHandler(function(res){
             // Upload éventuel des pièces jointes
             var input=document.getElementById('dFiles');
             var fl=(input&&input.files)?Array.from(input.files):[];
@@ -8592,7 +8579,7 @@ function getSavHtml_(payloadB64) {
               return;
             }
             uploadFiles_(fl, function(payloadFiles){
-              [google.script.run](http://google.script.run).withSuccessHandler(function(u){
+              google.script.run.withSuccessHandler(function(u){
                 if(u&&u.ok){
                   alert('Dossier créé : '+res.numero+'\\nFichiers enregistrés : '+(u.created||0)+'\\nDossier Drive : '+(u.folderUrl||''));
                 }else{
@@ -8632,7 +8619,7 @@ function getSavHtml_(payloadB64) {
             var num = String((document.getElementById('pdcCaseNum')&&document.getElementById('pdcCaseNum').value)||'').trim();
             if(!num){ done_(); showErr('Numéro de dossier SAV requis (rattachement).'); return; }
             if(caseCheck) caseCheck.textContent='Vérification du dossier...';
-            [google.script.run](http://google.script.run).withSuccessHandler(function(r){
+            google.script.run.withSuccessHandler(function(r){
               if(!(r&&r.ok)){
                 done_();
                 if(caseCheck) caseCheck.textContent='';
@@ -8641,10 +8628,10 @@ function getSavHtml_(payloadB64) {
               }
               if(caseCheck) caseCheck.textContent='OK — dossier trouvé : '+String(r.type||'');
               payload.dossierSav = num;
-              [google.script.run](http://google.script.run).withSuccessHandler(function(res){
+              google.script.run.withSuccessHandler(function(res){
                 done_();
                 if(res && res.ok){
-                  alert('Demande PDC créée : '+[res.id](http://res.id)+'\\nLe suivi est dans Logistique → Pièces détachées.');
+                  alert('Demande PDC créée : '+res.id+'\\nLe suivi est dans Logistique → Pièces détachées.');
                   try{ window.__logMode='pdc'; }catch(e){}
                   showTab('log');
                 }else{
@@ -8654,10 +8641,10 @@ function getSavHtml_(payloadB64) {
             }).withFailureHandler(function(e){ done_(); showErr(e); }).savFindCaseByNumero({numero:num});
             return;
           }
-          [google.script.run](http://google.script.run).withSuccessHandler(function(res){
+          google.script.run.withSuccessHandler(function(res){
             done_();
             if(res && res.ok){
-              alert('Demande PDC créée : '+[res.id](http://res.id)+'\\nLe suivi est dans Logistique → Pièces détachées.');
+              alert('Demande PDC créée : '+res.id+'\\nLe suivi est dans Logistique → Pièces détachées.');
               try{ window.__logMode='pdc'; }catch(e){}
               showTab('log');
             }else{
@@ -8684,7 +8671,7 @@ function getSavHtml_(payloadB64) {
           if(!mType) miss.push('Famille panne');
           if(!mPan) miss.push('Panne constatée');
           if(miss.length){ done_(); showErr('Impossible de valider la demande : champs obligatoires manquants — '+miss.join(', ')); return; }
-          [google.script.run](http://google.script.run).withSuccessHandler(function(res){
+          google.script.run.withSuccessHandler(function(res){
             var input=document.getElementById('mFiles');
             var fl=(input&&input.files)?Array.from(input.files):[];
             if(!fl.length){
@@ -8694,7 +8681,7 @@ function getSavHtml_(payloadB64) {
               return;
             }
             uploadFiles_(fl, function(payloadFiles){
-              [google.script.run](http://google.script.run).withSuccessHandler(function(u){
+              google.script.run.withSuccessHandler(function(u){
                 if(u&&u.ok){
                   alert('Dossier créé : '+res.numero+'\\nFichiers enregistrés : '+(u.created||0)+'\\nDossier Drive : '+(u.folderUrl||''));
                 }else{
@@ -8733,7 +8720,7 @@ function getSavHtml_(payloadB64) {
             var dataUrl=String(r.result||'');
             var parts=dataUrl.split(',');
             var b64=(parts.length>1)?parts[1]:'';
-            out.push({name:[f.name](http://f.name),mimeType:f.type||'application/octet-stream',base64:b64});
+            out.push({name:f.name,mimeType:f.type||'application/octet-stream',base64:b64});
           }catch(e){}
           next();
         };
@@ -8751,13 +8738,13 @@ function getSavHtml_(payloadB64) {
         var n=(inp.files&&inp.files.length)?inp.files.length:0;
         z.textContent = n ? (n+' fichier(s) sélectionné(s) — glisser pour remplacer / cliquer') : 'Glisser vos fichiers ici (ou cliquer)';
       }
-      z.onclick=function(){ [inp.click](http://inp.click)(); };
+      z.onclick=function(){ inp.click(); };
       inp.onchange=function(){ renderCount(); };
-      z.addEventListener('dragover', function(e){ e.preventDefault(); [z.style](http://z.style).background='rgba(37,99,235,.08)'; });
-      z.addEventListener('dragleave', function(){ [z.style](http://z.style).background='rgba(37,99,235,.04)'; });
+      z.addEventListener('dragover', function(e){ e.preventDefault(); z.style.background='rgba(37,99,235,.08)'; });
+      z.addEventListener('dragleave', function(){ z.style.background='rgba(37,99,235,.04)'; });
       z.addEventListener('drop', function(e){
         e.preventDefault();
-        [z.style](http://z.style).background='rgba(37,99,235,.04)';
+        z.style.background='rgba(37,99,235,.04)';
         if(e.dataTransfer && e.dataTransfer.files){
           inp.files = e.dataTransfer.files;
           renderCount();
@@ -8767,7 +8754,7 @@ function getSavHtml_(payloadB64) {
     }
 
     function refreshProcedures_(cb){
-      [google.script.run](http://google.script.run).withSuccessHandler(function(res){
+      google.script.run.withSuccessHandler(function(res){
         procDefs=(res&&res.procDefs)||{};
         procMap=(res&&res.procMap)||{};
         if(cb) cb();
@@ -8777,7 +8764,7 @@ function getSavHtml_(payloadB64) {
     function renderProcedures(){
       document.getElementById('mainTitle').textContent='Paramétrage — Procédures SAV';
       var pkeys=Object.keys(procDefs||{}).sort();
-      var opts=[pkeys.map](http://pkeys.map)(function(k){
+      var opts=pkeys.map(function(k){
         var p=procDefs[k]||{};
         return '<option value="'+esc(k)+'">'+esc((p.label||k))+'</option>';
       }).join('');
@@ -8819,7 +8806,7 @@ function getSavHtml_(payloadB64) {
       function fillFromProcId(pid){
         var p=procDefs[pid]||null;
         if(!p) return;
-        document.getElementById('pId').value=[p.id](http://p.id)||pid;
+        document.getElementById('pId').value=p.id||pid;
         document.getElementById('pLabel').value=p.label||'';
         document.getElementById('pObj').value=p.objectif||'';
         document.getElementById('pDoc').value=(p.documentation||[]).join('\\n');
@@ -8842,7 +8829,7 @@ function getSavHtml_(payloadB64) {
           etapesText:document.getElementById('pSteps').value,
           actif:document.getElementById('pAct').checked
         };
-        [google.script.run](http://google.script.run).withSuccessHandler(function(res){
+        google.script.run.withSuccessHandler(function(res){
           if(res&&res.ok){
             refreshProcedures_(function(){ renderProcedures(); });
           }else{
@@ -8854,7 +8841,7 @@ function getSavHtml_(payloadB64) {
       document.getElementById('btnAssign').onclick=function(){
         var pid=document.getElementById('mProc').value;
         var mt=document.getElementById('mModels').value;
-        [google.script.run](http://google.script.run).withSuccessHandler(function(res){
+        google.script.run.withSuccessHandler(function(res){
           if(res&&res.ok){
             document.getElementById('assignRes').textContent='OK — '+res.inserted+' ajoutés, '+res.updated+' mis à jour.';
             refreshProcedures_(function(){});
@@ -8866,7 +8853,7 @@ function getSavHtml_(payloadB64) {
 
       document.getElementById('btnUnassign').onclick=function(){
         var m=document.getElementById('uModel').value;
-        [google.script.run](http://google.script.run).withSuccessHandler(function(res){
+        google.script.run.withSuccessHandler(function(res){
           if(res&&res.ok){
             document.getElementById('unassignRes').textContent = res.removed ? 'OK — rattachement retiré.' : 'Aucun rattachement trouvé.';
             refreshProcedures_(function(){});
@@ -8885,7 +8872,7 @@ function getSavHtml_(payloadB64) {
     var listFetchInFlight=false;
     var listFetchWaiters=[];
     function reloadList(cb, force){
-      var now=[Date.now](http://Date.now)();
+      var now=Date.now();
       // si données récentes: ne pas refetch (rend l'UI beaucoup plus fluide)
       if(!force && allCases && allCases.length && (now-lastListFetchMs)<25000){
         if(cb) cb();
@@ -8894,9 +8881,9 @@ function getSavHtml_(payloadB64) {
       if(cb) listFetchWaiters.push(cb);
       if(listFetchInFlight) return;
       listFetchInFlight=true;
-      [google.script.run](http://google.script.run).withSuccessHandler(function(rows){
+      google.script.run.withSuccessHandler(function(rows){
         allCases=rows||[];
-        lastListFetchMs=[Date.now](http://Date.now)();
+        lastListFetchMs=Date.now();
         listFetchInFlight=false;
         // Robustesse : la fonction KPIs peut ne pas exister selon versions.
         try{ if(typeof refreshKpis_ === 'function') refreshKpis_(); }catch(e){}
@@ -9071,7 +9058,7 @@ function getSavHtml_(payloadB64) {
     function renderRdvCalendar_(){
       document.getElementById('mainTitle').textContent='📅 Calendrier des rendez-vous (Procédure 3 — Visio)';
       document.getElementById('mainBody').innerHTML='<div class="muted">Chargement...</div>';
-      [google.script.run](http://google.script.run).withSuccessHandler(function(rows){
+      google.script.run.withSuccessHandler(function(rows){
         rows = rows || [];
         var h='';
         h += '<div class="evt" style="margin-bottom:14px">';
@@ -9100,7 +9087,7 @@ function getSavHtml_(payloadB64) {
           else if(String(x.etat||'')==='EFFECTUÉ') badge += ' ok';
           else if(String(x.etat||'')==='ANNULÉ') badge += ' warn';
           h += '<tr>';
-          h += '<td style="padding:10px;border-bottom:1px solid rgba(255,255,255,.06)">'+esc([x.date](http://x.date)||'')+'</td>';
+          h += '<td style="padding:10px;border-bottom:1px solid rgba(255,255,255,.06)">'+esc(x.date||'')+'</td>';
           h += '<td style="padding:10px;border-bottom:1px solid rgba(255,255,255,.06)">'+esc(x.heure||'')+'</td>';
           h += '<td style="padding:10px;border-bottom:1px solid rgba(255,255,255,.06)"><button class="btn" type="button" data-open-num="'+esc(x.numero||'')+'">#'+esc(x.numero||'')+'</button></td>';
           h += '<td style="padding:10px;border-bottom:1px solid rgba(255,255,255,.06)">'+esc(x.client||'—')+'</td>';
@@ -9129,7 +9116,7 @@ function getSavHtml_(payloadB64) {
     function renderPdc_(){
       document.getElementById('mainTitle').textContent='Envois pièces détachées';
       document.getElementById('mainBody').innerHTML='<div class="muted">Chargement...</div>';
-      [google.script.run](http://google.script.run).withSuccessHandler(function(rows){
+      google.script.run.withSuccessHandler(function(rows){
         rows=rows||[];
         var h='';
         h += '<div class="evt" style="margin-bottom:14px">';
@@ -9143,7 +9130,7 @@ function getSavHtml_(payloadB64) {
         }
         rows.forEach(function(x){
           h += '<div class="evt" style="margin-bottom:14px">';
-          h += '<div class="row"><div class="name">'+esc([x.id](http://x.id))+'</div><span class="badge warn">'+esc(x.statut||'')+'</span></div>';
+          h += '<div class="row"><div class="name">'+esc(x.id)+'</div><span class="badge warn">'+esc(x.statut||'')+'</span></div>';
           h += '<div class="muted">Créé le '+esc(x.dateCreation||'')+'</div>';
           h += '<div style="margin-top:6px;font-size:12px"><b>Désignation</b> '+esc(x.designation||'—')+'</div>';
           h += '<div style="font-size:12px"><b>Références</b> '+esc(x.refs||'—')+'</div>';
@@ -9161,28 +9148,28 @@ function getSavHtml_(payloadB64) {
       count = Number(count||0);
       if(count>0){
         el.textContent=String(count);
-        [el.style](http://el.style).display='inline-flex';
+        el.style.display='inline-flex';
       }else{
         el.textContent='';
-        [el.style](http://el.style).display='none';
+        el.style.display='none';
       }
     }
 
     function refreshTabBadges_(){
       // Throttle: évite un aller-retour serveur à chaque clic d’onglet
-      var now=[Date.now](http://Date.now)();
+      var now=Date.now();
       if(window.__lastBadgeFetchMs && (now-window.__lastBadgeFetchMs)<15000) return;
       if(window.__badgeFetchInFlight) return;
       window.__badgeFetchInFlight=true;
-      [google.script.run](http://google.script.run).withSuccessHandler(function(r){
-        window.__lastBadgeFetchMs=[Date.now](http://Date.now)();
+      google.script.run.withSuccessHandler(function(r){
+        window.__lastBadgeFetchMs=Date.now();
         window.__badgeFetchInFlight=false;
         r=r||{};
         setTabBadge_('list', r.list||0);
         setTabBadge_('log', r.log||0);
         setTabBadge_('pdc', r.pdc||0);
         setTabBadge_('avoir', r.avoir||0);
-        setTabBadge_('mp', [r.mp](http://r.mp)||0);
+        setTabBadge_('mp', r.mp||0);
       }).withFailureHandler(function(){
         window.__badgeFetchInFlight=false;
       }).savGetTabBadges();
@@ -9280,7 +9267,7 @@ function getSavHtml_(payloadB64) {
         if(!to){ showErr('Email requis.'); return; }
         try{ b3.disabled=true; b3.textContent='Envoi...'; }catch(e){}
         if(box) box.innerHTML = '<div class="muted">Envoi en cours...</div>';
-        [google.script.run](http://google.script.run).withSuccessHandler(function(r){
+        google.script.run.withSuccessHandler(function(r){
           try{ b3.disabled=false; b3.textContent='Tester email ('+mailFromClient+')'; }catch(e){}
           if(r && r.ok){
             if(box) box.innerHTML = '<div class="evt"><div style="font-weight:900">OK — email envoyé</div><div class="muted">Expéditeur : '+esc(r.from||mailFromClient)+'</div></div>';
@@ -9318,7 +9305,7 @@ function getSavHtml_(payloadB64) {
           res.textContent = lines.join('\\n');
         }
 
-        [google.script.run](http://google.script.run).withSuccessHandler(function(r){
+        google.script.run.withSuccessHandler(function(r){
           renderRes(r);
         }).withFailureHandler(function(e){
           if(box){
@@ -9346,7 +9333,7 @@ function getSavHtml_(payloadB64) {
             'Traité: '+String(r.processed||0)+' · Créés: '+String(r.created||0)+' · Déjà OK: '+String(r.already||0)+' · Ignorés: '+String(r.skipped||0);
         }
 
-        [google.script.run](http://google.script.run).withSuccessHandler(function(r){
+        google.script.run.withSuccessHandler(function(r){
           renderRes(r);
         }).withFailureHandler(function(e){
           showErr(e);
@@ -9403,7 +9390,7 @@ function getSavHtml_(payloadB64) {
             var h='';
             if(gotKpis){
               h += '<div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px">';
-              h += card('Dossiers total', [gotKpis.total](http://gotKpis.total)||0, 'var(--text)');
+              h += card('Dossiers total', gotKpis.total||0, 'var(--text)');
               h += card('En cours', gotKpis.enCours||0, 'var(--accent)');
               h += card('Finalisés', gotKpis.finalises||0, 'var(--ok)');
               h += card('Distributeur', gotKpis.distributeurTotal||0, 'var(--text)');
@@ -9420,7 +9407,7 @@ function getSavHtml_(payloadB64) {
             renderStatsInto_(document.getElementById('sysStatsLines'), gotStats);
           }
 
-          [google.script.run](http://google.script.run).withSuccessHandler(function(s){
+          google.script.run.withSuccessHandler(function(s){
             gotStats=s||null;
             stats=gotStats;
             statsDone=true;
@@ -9433,7 +9420,7 @@ function getSavHtml_(payloadB64) {
             showErr(e);
           }).savGetStats();
 
-          [google.script.run](http://google.script.run).withSuccessHandler(function(k){
+          google.script.run.withSuccessHandler(function(k){
             gotKpis=k||null;
             kpisDone=true;
             maybeRender();
@@ -9450,7 +9437,7 @@ function getSavHtml_(payloadB64) {
           btnA.disabled=true;
           btnA.textContent='Chargement...';
           if(status) status.textContent='Chargement des analyses...';
-          [google.script.run](http://google.script.run).withSuccessHandler(function(a){
+          google.script.run.withSuccessHandler(function(a){
             btnA.disabled=false;
             btnA.textContent='Analyses pannes / refs';
             if(status) status.textContent='';
@@ -9525,7 +9512,7 @@ function getSavHtml_(payloadB64) {
 
       // Ticket de clôture annuelle (créé automatiquement pour N-1 au passage en N)
       try{
-        [google.script.run](http://google.script.run).withSuccessHandler(function(t){
+        google.script.run.withSuccessHandler(function(t){
           if(!yc) return;
           if(!(t&&t.ok)){ yc.innerHTML=''; return; }
           var y = Number(t.year||0);
@@ -9572,7 +9559,7 @@ function getSavHtml_(payloadB64) {
               bImp.disabled=true;
               uploadFiles_([fl[0]], function(payloadFiles){
                 var f = payloadFiles && payloadFiles.length ? payloadFiles[0] : null;
-                [google.script.run](http://google.script.run).withSuccessHandler(function(r){
+                google.script.run.withSuccessHandler(function(r){
                   bImp.disabled=false;
                   if(r&&r.ok){
                     if(res) res.textContent='OK — '+esc(String(r.inserted||0))+' ajouté(s), '+esc(String(r.updated||0))+' mis à jour, '+esc(String(r.ignored||0))+' ignoré(s).';
@@ -9597,7 +9584,7 @@ function getSavHtml_(payloadB64) {
               b2.textContent='Génération...';
               var res=document.getElementById('ycRes');
               if(res) res.textContent='Calcul en cours...';
-              [google.script.run](http://google.script.run).withSuccessHandler(function(r){
+              google.script.run.withSuccessHandler(function(r){
                 b2.disabled=false;
                 b2.textContent='Générer analytics annuelle '+esc(String(y));
                 if(r&&r.ok){
