@@ -5476,6 +5476,22 @@ function nextSavNumberGlobal_(ss) {
   return nextSavNumber_(ss, SAV_SHEET_DIST);
 }
 
+function nextId_(prefix, ss, sheetName, colIdx) {
+  const y = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy");
+  const fullPrefix = prefix + "-" + y + "-";
+  const sh = ss.getSheetByName(sheetName);
+  if (!sh || sh.getLastRow() < 2) return fullPrefix + "001";
+  const lr = sh.getLastRow();
+  const vals = sh.getRange(2, colIdx, lr - 1, 1).getValues();
+  let max = 0;
+  const re = new RegExp("^" + prefix + "-" + y + "-(\\d+)$");
+  for (let i = 0; i < vals.length; i++) {
+    const m = String(vals[i][0] || "").trim().match(re);
+    if (m) max = Math.max(max, parseInt(m[1], 10));
+  }
+  return fullPrefix + String(max + 1).padStart(3, "0");
+}
+
 function ensureSavSheets_() {
   const id = String(SAV_SPREADSHEET_ID || "").trim();
   if (!id || id === "REMPLACE_PAR_ID_DU_CLASSEUR") {
@@ -9155,7 +9171,7 @@ function getSavHtml_(payloadB64) {
           if(b1){
             b1.onclick=function(){
               // Texte d'info uniquement (évite les anciennes interpolations non résolues côté navigateur)
-              alert('Ouvre la feuille Google Sheets : '+SAV_SHEET_ANALYTICS_VOLUMES+'\\nColonnes : Année | Référence | Volume produits');
+              alert('Ouvre la feuille Google Sheets : SAV_Analytics_Volumes\\nColonnes : Année | Référence | Volume produits');
             };
           }
 
