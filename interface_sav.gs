@@ -307,26 +307,13 @@ const HDR_AVOIR_TICKETS = [
 // Emails récap quotidiens
 const SAV_MAIL_RELATION_CLIENT = "[relationclient@optimea.fr](mailto:relationclient@optimea.fr)";
 const SAV_MAIL_ADV = "[adv@optimea.fr](mailto:adv@optimea.fr)";
-const SAV_MAIL_FROM = "[sav@optimea.fr](mailto:sav@optimea.fr)";
+const SAV_MAIL_FROM = "cedric.gesnouin@optimea.fr";
 
 // =========================
-// EMAIL (Outlook / Microsoft 365)
-// =========================
-// Pour forcer l'expéditeur "[sav@optimea.fr](mailto:sav@optimea.fr)" sans exposer le compte Google exécutant,
-// on envoie via Microsoft Graph (App Registration Azure AD).
-// Renseigner ces constantes avec les valeurs de ton tenant/app.
-const M365_TENANT_ID = "REMPLACE_PAR_TENANT_ID";
-const M365_CLIENT_ID = "REMPLACE_PAR_CLIENT_ID";
-const M365_CLIENT_SECRET = "REMPLACE_PAR_CLIENT_SECRET";
+// EMAIL — envoi via le compte Google lié au script (MailApp)
 
-// Option "propre" : on stocke la configuration dans les Propriétés du script (editable depuis l'UI).
-const M365_PROP_KEYS = {
-  TENANT_ID: "m365.tenantId",
-  CLIENT_ID: "m365.clientId",
-  CLIENT_SECRET: "m365.clientSecret",
-  ACCESS_TOKEN: "m365.accessToken",
-  ACCESS_TOKEN_EXPIRES_MS: "m365.accessTokenExpMs",
-};
+
+
 
 // Cache (fluidité : limite les lectures Sheets répétées)
 const SAV_CACHE_TTL_SECONDS = 120; // court TTL + invalidation sur écriture = fluide sans incohérences longues
@@ -396,17 +383,16 @@ function savTestEmail(payload) {
   const to = String(o.to || "").trim();
   if (!to) return { ok: false, message: "Email destinataire requis." };
   const now = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss");
-  const subj = "[TEST] SAV OPTIMEA — envoi via Microsoft 365 (" + now + ")";
+  const subj = "[TEST] SAV OPTIMEA — email de test (" + now + ")";
   const body =
     "Bonjour,\n\n" +
     "Ceci est un email de test envoyé par l'application SAV.\n\n" +
-    "- Expéditeur attendu : " +
+    "- Expéditeur : " +
     SAV_MAIL_FROM +
     "\n" +
     "- Envoyé le : " +
     now +
-    "\n\n" +
-    "Si vous voyez une autre adresse comme expéditeur, alors la configuration Microsoft Graph n'est pas appliquée.\n";
+    "\n";
   try {
     const r = savSendEmailFromSav_(to, subj, body, []);
     return r && r.ok ? { ok: true, message: "OK — email test envoyé.", from: r.from } : { ok: false, message: (r && r.message) || "Erreur envoi." };
@@ -440,7 +426,7 @@ function savSendDailyRecaps() {
   // Envoi depuis [sav@optimea.fr](mailto:sav@optimea.fr) via Microsoft 365 (HTML conservé)
   savSendEmailFromSavHtml_(SAV_MAIL_RELATION_CLIENT, mpSubject, mpBody, []);
 
-  // 2) Logistique : à traiter + expédié (en route)
+  // Logistique : à traiter + expédié (en route)
   const log = savListLogistique(true) || [];
   const aTraiter = log.filter((x) => String(x.statutLog || "") === LOG_STAT_A_TRAITER);
   const enRoute = log.filter((x) => String(x.statutLog || "") === LOG_STAT_EXPEDIE);
@@ -3425,385 +3411,8 @@ function savReturnAddressText_() {
   return "OPTIMEA - SAV\n34 Rue du Moulin des Bruyères\n92400 COURBEVOIE\nFRANCE";
 }
 
-function m365GetConfig_() {
-  const props = PropertiesService.getScriptProperties();
-  const pTenant = String(props.getProperty(M365_PROP_KEYS.TENANT_ID) || "").trim();
-  const pClientId = String(props.getProperty(M365_PROP_KEYS.CLIENT_ID) || "").trim();
-  const pSecret = String(props.getProperty(M365_PROP_KEYS.CLIENT_SECRET) || "").trim();
-
-  // fallback (compat) sur constantes si non configuré via propriétés
-  const cTenant = String(M365_TENANT_ID || "").trim();
-  const cClientId = String(M365_CLIENT_ID || "").trim();
-  const cSecret = String(M365_CLIENT_SECRET || "").trim();
-
-  return {
-    tenantId: pTenant || (cTenant !== "REMPLACE_PAR_TENANT_ID" ? cTenant : ""),
-    clientId: pClientId || (cClientId !== "REMPLACE_PAR_CLIENT_ID" ? cClientId : ""),
-    clientSecret: pSecret || (cSecret !== "REMPLACE_PAR_CLIENT_SECRET" ? cSecret : ""),
-    hasProps: !!(pTenant || pClientId || pSecret),
-    hasSecret: !!(pSecret || (cSecret && cSecret !== "REMPLACE_PAR_CLIENT_SECRET")),
-  };
-}
-
-function m365GetAccessToken_() {
-  const cfg = m365GetConfig_();
-  const tenant = String(cfg.tenantId || "").trim();
-  const clientId = String(cfg.clientId || "").trim();
-  const clientSecret = String(cfg.clientSecret || "").trim();
-  if (!tenant) throw new Error("Configure Microsoft 365 (Tenant ID). Onglet Système → Configurer Microsoft 365.");
-  if (!clientId) throw new Error("Configure Microsoft 365 (Client ID). Onglet Système → Configurer Microsoft 365.");
-  if (!clientSecret) throw new Error("Configure Microsoft 365 (Client Secret). Onglet Système → Configurer Microsoft 365.");
-
-  const props = PropertiesService.getScriptProperties();
-  const isTokenFresh_ = (token, expMs) => {
-    const t = String(token || "").trim();
-    const e = Number(expMs || 0);
-    // keep 2 min safety margin (token is usually 1h)
-    return !!(t && e && (Date.now() + 2 * 60 * 1000) < e);
-  };
-
-  // Cache token to reduce calls to login.microsoftonline.com (prevents UrlFetch bandwidth quota issues)
-  const cache = CacheService.getScriptCache();
-  const cacheKey = "m365:token:" + tenant + ":" + clientId;
-  const readCached = () => {
-    try {
-      const cached = cache.get(cacheKey);
-      if (!cached) return null;
-      const obj = JSON.parse(cached);
-      const token = String(obj && obj.token ? obj.token : "").trim();
-      const expMs = Number(obj && obj.expMs ? obj.expMs : 0);
-      return token ? { token, expMs } : null;
-    } catch (e) {
-      return null;
-    }
-  };
-  const cached1 = readCached();
-  if (cached1 && isTokenFresh_(cached1.token, cached1.expMs)) return cached1.token;
-
-  // Persistent cache (Script Properties) survives redeploy + cache eviction
-  try {
-    const pTok = String(props.getProperty(M365_PROP_KEYS.ACCESS_TOKEN) || "").trim();
-    const pExp = Number(props.getProperty(M365_PROP_KEYS.ACCESS_TOKEN_EXPIRES_MS) || 0);
-    if (isTokenFresh_(pTok, pExp)) {
-      // also warm in-memory cache for this execution
-      try { cache.put(cacheKey, JSON.stringify({ token: pTok, expMs: pExp }), 1800); } catch (e) {}
-      return pTok;
-    }
-  } catch (e) {}
-
-  // Anti "stampede": only one execution fetches a new token at a time.
-  // Others wait briefly then re-read cache.
-  const lock = LockService.getScriptLock();
-  let locked = false;
-  try {
-    locked = lock.tryLock(8000);
-    if (!locked) {
-      Utilities.sleep(900);
-      const cachedWait = readCached();
-      if (cachedWait && isTokenFresh_(cachedWait.token, cachedWait.expMs)) return cachedWait.token;
-      // also check persistent props after waiting
-      try {
-        const pTok = String(props.getProperty(M365_PROP_KEYS.ACCESS_TOKEN) || "").trim();
-        const pExp = Number(props.getProperty(M365_PROP_KEYS.ACCESS_TOKEN_EXPIRES_MS) || 0);
-        if (isTokenFresh_(pTok, pExp)) return pTok;
-      } catch (e) {}
-      // proceed without lock as last resort
-    } else {
-      // token may have been filled by a previous holder
-      const cached2 = readCached();
-      if (cached2 && isTokenFresh_(cached2.token, cached2.expMs)) return cached2.token;
-      try {
-        const pTok = String(props.getProperty(M365_PROP_KEYS.ACCESS_TOKEN) || "").trim();
-        const pExp = Number(props.getProperty(M365_PROP_KEYS.ACCESS_TOKEN_EXPIRES_MS) || 0);
-        if (isTokenFresh_(pTok, pExp)) return pTok;
-      } catch (e) {}
-    }
-  } catch (e) {
-    // ignore lock issues; continue
-  }
-
-  const url = "https://login.microsoftonline.com/" + encodeURIComponent(tenant) + "/oauth2/v2.0/token";
-  const payload = {
-    client_id: clientId,
-    client_secret: clientSecret,
-    scope: "https://graph.microsoft.com/.default",
-    grant_type: "client_credentials",
-  };
-  let res = null;
-  let code = 0;
-  let txt = "";
-  try {
-    res = UrlFetchApp.fetch(url, { method: "post", payload: payload, muteHttpExceptions: true });
-    code = res.getResponseCode();
-    txt = res.getContentText();
-  } catch (e) {
-    const msg = e && e.message ? String(e.message) : String(e);
-    // If Apps Script UrlFetch bandwidth quota is exceeded, try to use a cached token even if close to expiry.
-    if (msg.indexOf("Quota de bande passante dépass") >= 0 || msg.toLowerCase().indexOf("bandwidth") >= 0) {
-      const cachedFallback = readCached();
-      if (cachedFallback && cachedFallback.token) return cachedFallback.token;
-      try {
-        const pTok = String(props.getProperty(M365_PROP_KEYS.ACCESS_TOKEN) || "").trim();
-        const pExp = Number(props.getProperty(M365_PROP_KEYS.ACCESS_TOKEN_EXPIRES_MS) || 0);
-        if (pTok && pExp && Date.now() < pExp) return pTok; // allow even if near expiry
-      } catch (e2) {}
-      throw new Error(
-        "Quota Apps Script (UrlFetch) dépassé sur /token. " +
-          "Attends le reset du quota puis réessaie. Détail: " +
-          msg
-      );
-    }
-    throw e;
-  } finally {
-    try { if (locked) lock.releaseLock(); } catch (e) {}
-  }
-  if (code < 200 || code >= 300) throw new Error("M365 token error (" + code + "): " + txt);
-  const obj = JSON.parse(txt);
-  if (!obj || !obj.access_token) throw new Error("M365 token missing access_token.");
-
-  // Cache for expires_in (seconds), capped to 1h for safety
-  try {
-    const expiresIn = Math.max(60, Number(obj.expires_in || 3600));
-    const ttl = Math.max(60, Math.min(3500, expiresIn - 60)); // keep margin
-    const expMs = Date.now() + expiresIn * 1000;
-    cache.put(cacheKey, JSON.stringify({ token: obj.access_token, expMs: expMs }), ttl);
-    // Persist too (survives redeploy/cache eviction)
-    props.setProperty(M365_PROP_KEYS.ACCESS_TOKEN, String(obj.access_token));
-    props.setProperty(M365_PROP_KEYS.ACCESS_TOKEN_EXPIRES_MS, String(expMs));
-  } catch (e) {}
-  return obj.access_token;
-}
-
-function savM365ConfigGet() {
-  const props = PropertiesService.getScriptProperties();
-  const tenantId = String(props.getProperty(M365_PROP_KEYS.TENANT_ID) || "").trim();
-  const clientId = String(props.getProperty(M365_PROP_KEYS.CLIENT_ID) || "").trim();
-  const hasSecret = !!String(props.getProperty(M365_PROP_KEYS.CLIENT_SECRET) || "").trim();
-  return {
-    ok: true,
-    tenantId: tenantId,
-    clientId: clientId,
-    hasSecret: hasSecret,
-    from: SAV_MAIL_FROM,
-  };
-}
-
-function savM365ConfigSet(payload) {
-  const o = payload || {};
-  const tenantId = String(o.tenantId || "").trim();
-  const clientId = String(o.clientId || "").trim();
-  const clientSecret = String(o.clientSecret || "").trim(); // optional: empty = keep existing
-  const clearSecret = !!o.clearSecret;
-
-  if (!tenantId) return { ok: false, message: "Tenant ID requis." };
-  if (!clientId) return { ok: false, message: "Client ID requis." };
-
-  const props = PropertiesService.getScriptProperties();
-  props.setProperty(M365_PROP_KEYS.TENANT_ID, tenantId);
-  props.setProperty(M365_PROP_KEYS.CLIENT_ID, clientId);
-  if (clearSecret) {
-    props.deleteProperty(M365_PROP_KEYS.CLIENT_SECRET);
-  } else if (clientSecret) {
-    props.setProperty(M365_PROP_KEYS.CLIENT_SECRET, clientSecret);
-  }
-  return { ok: true, from: SAV_MAIL_FROM };
-}
-
-function savM365ClearToken() {
-  // Clears cached/persisted access token so new permissions/consent are picked up immediately
-  try {
-    const cfg = m365GetConfig_();
-    const tenant = String(cfg.tenantId || "").trim();
-    const clientId = String(cfg.clientId || "").trim();
-    const cacheKey = "m365:token:" + tenant + ":" + clientId;
-    try { CacheService.getScriptCache().remove(cacheKey); } catch (e) {}
-  } catch (e) {}
-  try {
-    const props = PropertiesService.getScriptProperties();
-    props.deleteProperty(M365_PROP_KEYS.ACCESS_TOKEN);
-    props.deleteProperty(M365_PROP_KEYS.ACCESS_TOKEN_EXPIRES_MS);
-  } catch (e) {}
-  return { ok: true };
-}
-
-function savM365TokenInfo() {
-  // Decodes the current access token payload (JWT) to debug tenant/app/roles.
-  // Does NOT validate signature (debug only) and does not return the raw token.
-  try {
-    const cfg = m365GetConfig_();
-    const token = m365GetAccessToken_();
-    const parts = String(token || "").split(".");
-    if (parts.length < 2) return { ok: false, message: "Token non-JWT (format inattendu)." };
-    const b64 = parts[1];
-    const json = Utilities.newBlob(Utilities.base64DecodeWebSafe(b64)).getDataAsString("utf-8");
-    const payload = JSON.parse(json);
-    // Keep only safe/high-signal fields
-    const out = {
-      tenantIdConfigured: String(cfg.tenantId || ""),
-      clientIdConfigured: String(cfg.clientId || ""),
-      aud: payload.aud,
-      iss: payload.iss,
-      tid: payload.tid,
-      appid: payload.appid,
-      scp: payload.scp || "",
-      roles: payload.roles || [],
-      exp: payload.exp || null,
-      nbf: payload.nbf || null,
-      iat: payload.iat || null,
-    };
-    return { ok: true, token: out };
-  } catch (e) {
-    const msg = e && e.message ? String(e.message) : String(e);
-    return { ok: false, message: msg };
-  }
-}
-
-function m365SendMailFromSav_(to, subject, bodyText, attachments, isHtml) {
-  const dest = String(to || "").trim();
-  if (!dest) return { ok: false, message: "Destinataire email requis." };
-  const subj = String(subject || "").trim();
-  const body = String(bodyText || "");
-  const atts = attachments && attachments.length ? attachments : [];
-
-  const url = "https://graph.microsoft.com/v1.0/users/" + encodeURIComponent(SAV_MAIL_FROM) + "/sendMail";
-
-  const graphAttachments = [];
-  for (let i = 0; i < atts.length; i++) {
-    const blob = atts[i];
-    if (!blob) continue;
-    const name = String(blob.getName ? blob.getName() : "piece-" + (i + 1));
-    const bytes = blob.getBytes();
-    graphAttachments.push({
-      "@odata.type": "#microsoft.graph.fileAttachment",
-      name: name,
-      contentType: blob.getContentType ? blob.getContentType() : "application/octet-stream",
-      contentBytes: Utilities.base64Encode(bytes),
-    });
-  }
-
-  const msg = {
-    subject: subj,
-    body: { contentType: isHtml ? "HTML" : "Text", content: body },
-    toRecipients: [{ emailAddress: { address: dest } }],
-  };
-  if (graphAttachments.length) msg.attachments = graphAttachments;
-
-  const payload = { message: msg, saveToSentItems: true };
-
-  const headerGet_ = (h, k) => {
-    if (!h) return "";
-    return String(h[k] || h[k.toLowerCase()] || h[k.toUpperCase()] || "");
-  };
-  const headersCompact_ = (h) => {
-    try {
-      if (!h) return {};
-      // keep only helpful headers (Graph often provides request correlation IDs)
-      const out = {};
-      [
-        "WWW-Authenticate",
-        "request-id",
-        "client-request-id",
-        "x-ms-ags-diagnostic",
-        "Date",
-      ].forEach((k) => {
-        const v = headerGet_(h, k);
-        if (v) out[k] = v;
-      });
-      return out;
-    } catch (e) {
-      return {};
-    }
-  };
-
-  // Retry: handles transient failures / throttling (429/5xx)
-  let lastCode = 0;
-  let lastTxt = "";
-  let lastHeaders = null;
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    const token = m365GetAccessToken_();
-    const res = UrlFetchApp.fetch(url, {
-      method: "post",
-      contentType: "application/json",
-      headers: { Authorization: "Bearer " + token },
-      payload: JSON.stringify(payload),
-      muteHttpExceptions: true,
-    });
-    const code = res.getResponseCode();
-    const txt = res.getContentText();
-    let headers = null;
-    try { headers = res.getAllHeaders ? res.getAllHeaders() : null; } catch (e) { headers = null; }
-    lastCode = code;
-    lastTxt = txt;
-    lastHeaders = headers;
-    if (code >= 200 && code < 300) return { ok: true, from: SAV_MAIL_FROM };
-    // Auth errors
-    // 401 can happen if a cached token is stale/invalidated; clear cache once and retry.
-    if (code === 401 && attempt === 1) {
-      try {
-        // purge both in-memory cache + persistent properties
-        savM365ClearToken();
-      } catch (e) {}
-      Utilities.sleep(300);
-      continue;
-    }
-    if (code === 401 || code === 403) {
-      const h = headers || {};
-      const wa = headerGet_(h, "WWW-Authenticate");
-      const compact = headersCompact_(h);
-      const detail = (txt && String(txt).trim())
-        ? String(txt)
-        : ("(body vide) WWW-Authenticate: " + String(wa || "—") + " | headers: " + JSON.stringify(compact));
-      return { ok: false, message: "M365 sendMail error (" + code + "): " + detail };
-    }
-    // Throttle/transient: retry with backoff
-    if (attempt < 3 && (code === 429 || code >= 500)) {
-      Utilities.sleep(700 * attempt);
-      continue;
-    }
-    return { ok: false, message: "M365 sendMail error (" + code + "): " + txt };
-  }
-  const h = lastHeaders || {};
-  const wa = headerGet_(h, "WWW-Authenticate");
-  const compact = headersCompact_(h);
-  const detail = (lastTxt && String(lastTxt).trim())
-    ? String(lastTxt)
-    : ("(body vide) WWW-Authenticate: " + String(wa || "—") + " | headers: " + JSON.stringify(compact));
-  return { ok: false, message: "M365 sendMail error (" + lastCode + "): " + detail };
-}
-
-function m365GraphProbe_() {
-  // Lightweight probe to verify token validity + permissions against Graph, without sending mail.
-  // Uses the same app-only token and tries to read the "from" user.
-  const token = m365GetAccessToken_();
-  const url = "https://graph.microsoft.com/v1.0/users/" + encodeURIComponent(SAV_MAIL_FROM) + "?$select=id,mail,userPrincipalName,displayName";
-  const res = UrlFetchApp.fetch(url, {
-    method: "get",
-    headers: { Authorization: "Bearer " + token },
-    muteHttpExceptions: true,
-  });
-  let headers = null;
-  try { headers = res.getAllHeaders ? res.getAllHeaders() : null; } catch (e) { headers = null; }
-  return { ok: true, code: res.getResponseCode(), body: res.getContentText(), headers: headers };
-}
-
-function savM365Probe() {
-  // Exposed wrapper for UI: avoids using the Apps Script editor runner.
-  try {
-    const r = m365GraphProbe_();
-    const code = Number(r && r.code ? r.code : 0);
-    const body = String(r && r.body ? r.body : "");
-    // keep response lightweight
-    const trimmedBody = body.length > 2000 ? body.slice(0, 2000) + "…(truncated)" : body;
-    return { ok: true, code: code, body: trimmedBody };
-  } catch (e) {
-    const msg = e && e.message ? String(e.message) : String(e);
-    const stack = e && e.stack ? String(e.stack) : "";
-    return { ok: false, message: msg, stack: stack };
-  }
-}
 
 function savSendEmailFromSav_(to, subject, bodyText, attachments) {
-  // Envoi texte : version sans Microsoft Graph (contournement)
   try {
     const dest = String(to || "").trim();
     if (!dest) return { ok: false, message: "Destinataire email requis." };
@@ -3823,7 +3432,6 @@ function savSendEmailFromSav_(to, subject, bodyText, attachments) {
 }
 
 function savSendEmailFromSavHtml_(to, subject, htmlBody, attachments) {
-  // Envoi HTML : version sans Microsoft Graph (contournement)
   try {
     const dest = String(to || "").trim();
     if (!dest) return { ok: false, message: "Destinataire email requis." };
@@ -9239,7 +8847,7 @@ function getSavHtml_(payloadB64) {
 
     function renderSystem_(){
       document.getElementById('mainTitle').textContent='Système';
-      var mailFromClient = '[sav@optimea.fr](mailto:sav@optimea.fr)';
+      var mailFromClient = 'cedric.gesnouin@optimea.fr';
       document.getElementById('mainBody').innerHTML =
         '<div class="row" style="gap:10px;align-items:stretch;flex-wrap:wrap">' +
           '<button class="btn" type="button" id="sysProcedures">Procédures</button>' +
