@@ -2484,7 +2484,9 @@ function savCreateDistributor(payload) {
   ];
   sh.appendRow(row);
   savCacheInvalidateAll_();
-  return { ok: true, numero: num, row: sh.getLastRow(), sheet: SAV_SHEET_DIST };
+  const rowDist = sh.getLastRow();
+  try { savEnsureDriveFolderAndWriteUrl_(SAV_SHEET_DIST, rowDist, num); } catch(e) {}
+  return { ok: true, numero: num, row: rowDist, sheet: SAV_SHEET_DIST };
 }
 
 function savCreateMarketplace(payload) {
@@ -2560,6 +2562,7 @@ function savCreateMarketplace(payload) {
     }
   }
 
+  try { savEnsureDriveFolderAndWriteUrl_(SAV_SHEET_MP, rowMain, num); } catch(e) {}
   return { ok: true, numero: num, row: rowMain, sheet: SAV_SHEET_MP };
 }
 
