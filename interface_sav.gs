@@ -41,13 +41,20 @@ const SAV_SHEET_ANALYTICS_YEAR_TICKETS = "SAV_Analytics_YearTickets";
 const SAV_SHEET_MODELES_PROD = "Modeles";
 const SAV_SHEET_MODELES_PROD_ALT = "Modèles";
 
-// Dossiers parents Drive "Gestion SAV" (fournis par l’utilisateur)
-// - Distributeur : dossiers SAV + documents
-// - Marketplace : dossiers SAV Marketplace + documents
-const SAV_DRIVE_PARENT_FOLDER_ID = "1-E1NnM8k4Kussgm9LwLN9x38COrycU0b";
-const SAV_DRIVE_PARENT_FOLDER_ID_MP = "1XCtOTixu-KZkxYeoZsBbVWhD8Buzsm-_";
-// Logistique / PDC hors dossiers SAV (Documents)
-const SAV_DRIVE_PARENT_FOLDER_ID_MISC = "1jc5cadNZuHu01TH-Z_nkn_JLXvijtkp6";
+// Dossier racine Drive unique — tout est créé automatiquement à l’intérieur
+const SAV_DRIVE_ROOT_FOLDER_ID = "1XrMTHEcn2gasLwJR95zF4vi8iGvRo5KC";
+
+// Noms des sous-dossiers créés automatiquement dans SAV_DRIVE_ROOT_FOLDER_ID
+const SAV_DRIVE_SUBDIR_DIST  = "SAV Distributeur";
+const SAV_DRIVE_SUBDIR_MP    = "SAV Marketplace";
+const SAV_DRIVE_SUBDIR_PDC   = "PDC";
+const SAV_DRIVE_SUBDIR_MISC  = "Logistique & Autres";
+
+// Clés de cache pour les IDs de sous-dossiers (évite de rescanner à chaque appel)
+const SAV_DRIVE_CACHE_DIST  = "sav:drive:dist";
+const SAV_DRIVE_CACHE_MP    = "sav:drive:mp";
+const SAV_DRIVE_CACHE_PDC   = "sav:drive:pdc";
+const SAV_DRIVE_CACHE_MISC  = "sav:drive:misc";
 
 // Logo Optimea (pour le site + entêtes PDF)
 // Dossier fourni par toi : 1Ugcb_LwnLfr8VSu6Ph_OlNt46IBiyn7n
@@ -2668,17 +2675,39 @@ function savGetOrCreateSubFolder_(parentFolder, name) {
   return parentFolder.createFolder(name);
 }
 
+/**
+ * Retourne (et crée si besoin) le sous-dossier Drive correspondant à un type.
+ * Tout passe par le dossier racine SAV_DRIVE_ROOT_FOLDER_ID.
+ * Les IDs des sous-dossiers sont mis en cache 6h pour éviter des appels Drive répétés.
+ */
+function savGetDriveSubFolder_(subName, cacheKey) {
+  // 1. Tenter le cache (ID stocké → accès direct sans rescan)
+  try {
+    const cached = CacheService.getScriptCache().get(cacheKey);
+    if (cached) return DriveApp.getFolderById(cached);
+  } catch(e) {}
+
+  // 2. Ouvrir le dossier racine et créer/récupérer le sous-dossier
+  const root = DriveApp.getFolderById(SAV_DRIVE_ROOT_FOLDER_ID);
+  const folder = savGetOrCreateSubFolder_(root, subName);
+
+  // 3. Mettre en cache l'ID 6h
+  try { CacheService.getScriptCache().put(cacheKey, folder.getId(), 6 * 3600); } catch(e) {}
+  return folder;
+}
+
 function savGetDriveParentFolderForSheet_(sheetName) {
   const s = String(sheetName || "").trim();
-  const id = s === SAV_SHEET_MP ? String(SAV_DRIVE_PARENT_FOLDER_ID_MP || "").trim() : String(SAV_DRIVE_PARENT_FOLDER_ID || "").trim();
-  if (!id) throw new Error("Dossier parent Drive non configuré.");
-  return DriveApp.getFolderById(id);
+  if (s === SAV_SHEET_MP) return savGetDriveSubFolder_(SAV_DRIVE_SUBDIR_MP, SAV_DRIVE_CACHE_MP);
+  return savGetDriveSubFolder_(SAV_DRIVE_SUBDIR_DIST, SAV_DRIVE_CACHE_DIST);
 }
 
 function savGetDriveParentFolderForMisc_() {
-  const id = String(SAV_DRIVE_PARENT_FOLDER_ID_MISC || "").trim();
-  if (!id) throw new Error("Dossier parent Drive (logistique/PDC) non configuré.");
-  return DriveApp.getFolderById(id);
+  return savGetDriveSubFolder_(SAV_DRIVE_SUBDIR_MISC, SAV_DRIVE_CACHE_MISC);
+}
+
+function savGetDriveParentFolderForPdc_() {
+  return savGetDriveSubFolder_(SAV_DRIVE_SUBDIR_PDC, SAV_DRIVE_CACHE_PDC);
 }
 
 function pdcNextNumber_(ss) {
@@ -2700,9 +2729,8 @@ function pdcNextNumber_(ss) {
 }
 
 function pdcEnsureDriveFolderAndWriteUrl_(sh, row, id) {
-  const parent = savGetDriveParentFolderForMisc_();
-  const root = savGetOrCreateSubFolder_(parent, "Pièces détachées");
-  const folder = savGetOrCreateSubFolder_(root, id);
+  const parent = savGetDriveParentFolderForPdc_();
+  const folder = savGetOrCreateSubFolder_(parent, id);
   const url = folder.getUrl();
   // colonne "Dossier Drive" (dernière)
   sh.getRange(row, HDR_PDC.length).setValue(url);
@@ -3052,9 +3080,8 @@ function pdcUploadDocs(payload) {
   const id = String(r[0] || "").trim();
   if (!id) return { ok: false, message: "Id PDC manquant." };
 
-  const parent = savGetDriveParentFolderForMisc_();
-  const root = savGetOrCreateSubFolder_(parent, "Pièces détachées");
-  const folder = savGetOrCreateSubFolder_(root, id);
+  const parent = savGetDriveParentFolderForPdc_();
+  const folder = savGetOrCreateSubFolder_(parent, id);
   const docs = savGetOrCreateSubFolder_(folder, "Documents");
 
   let created = 0;
@@ -3235,45 +3262,36 @@ function savBackfillDriveFolders(payload) {
 
 function savDriveAccessCheck() {
   ensureSavSheets_();
-  function checkOne(label, id) {
-    id = String(id || "").trim();
-    if (!id) return { label, ok: false, message: "ID dossier parent manquant." };
+
+  function checkFolder(label, getFolderFn) {
     try {
-      const f = DriveApp.getFolderById(id);
-      let name = "";
-      try {
-        name = f.getName();
-      } catch (eName) {
-        const msg = eName && eName.message ? String(eName.message) : String(eName);
-        return { label, ok: false, id, phase: "read:getName", message: msg };
-      }
-      // write test: create a small subfolder and trash it
-      const testName = "_SAV_TEST_ACCESS_" + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyyMMdd_HHmmss");
-      let sub = null;
+      const f = getFolderFn();
+      const name = f.getName();
+      const id = f.getId();
+      // Test écriture : crée un sous-dossier temporaire et le met à la corbeille
+      const testName = "_SAV_TEST_" + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyyMMdd_HHmmss");
+      let sub;
       try {
         sub = f.createFolder(testName);
-      } catch (eCreate) {
-        const msg = eCreate && eCreate.message ? String(eCreate.message) : String(eCreate);
-        return { label, ok: false, id, name, phase: "write:createFolder", message: msg };
-      }
-      try {
         sub.setTrashed(true);
-      } catch (eTrash) {
-        const msg = eTrash && eTrash.message ? String(eTrash.message) : String(eTrash);
-        return { label, ok: false, id, name, phase: "write:setTrashed", message: msg };
+      } catch (eWrite) {
+        return { label, ok: false, id, name, phase: "write", message: String(eWrite.message || eWrite) };
       }
       return { label, ok: true, name, id };
     } catch (e) {
-      const msg = e && e.message ? String(e.message) : String(e);
-      return { label, ok: false, id, phase: "read:getFolderById", message: msg };
+      return { label, ok: false, phase: "read", message: String(e.message || e) };
     }
   }
+
   return {
     ok: true,
+    rootId: SAV_DRIVE_ROOT_FOLDER_ID,
     checks: [
-      checkOne("Distributeur (SAV)", SAV_DRIVE_PARENT_FOLDER_ID),
-      checkOne("Marketplace (SAV MP)", SAV_DRIVE_PARENT_FOLDER_ID_MP),
-      checkOne("Hors SAV (PDC/Autres)", SAV_DRIVE_PARENT_FOLDER_ID_MISC),
+      checkFolder("Dossier racine SAV",      () => DriveApp.getFolderById(SAV_DRIVE_ROOT_FOLDER_ID)),
+      checkFolder("SAV Distributeur",        () => savGetDriveParentFolderForSheet_(SAV_SHEET_DIST)),
+      checkFolder("SAV Marketplace",         () => savGetDriveParentFolderForSheet_(SAV_SHEET_MP)),
+      checkFolder("PDC",                     () => savGetDriveParentFolderForPdc_()),
+      checkFolder("Logistique & Autres",     () => savGetDriveParentFolderForMisc_()),
     ],
   };
 }
@@ -4392,13 +4410,10 @@ function savGetCaseTimelineHtml(payload) {
     let proofUrl = "";
     let msgUrl = "";
     try {
-      const parentId = String(SAV_DRIVE_PARENT_FOLDER_ID || "").trim();
-      if (parentId) {
-        const parent = DriveApp.getFolderById(parentId);
+      const parent = savGetDriveParentFolderForSheet_(sheetName);
         const dossier = savGetOrCreateSubFolder_(parent, numero);
         proofUrl = savGetOrCreateSubFolder_(dossier, "Preuves livraison").getUrl();
         msgUrl = savGetOrCreateSubFolder_(dossier, "Messages Marketplace").getUrl();
-      }
     } catch (e) {}
 
     const rec = savReadReceptionByNumero_(ss, numero) || [];
