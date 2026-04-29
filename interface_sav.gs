@@ -3984,6 +3984,12 @@ function savGenerateReturnLabelPdf(payload) {
   return { ok: true, folderUrl, fileUrl: f.getUrl(), fileName, fileId: f.getId() };
 }
 
+function savGenerateLogistiqueShippingLabelPdf(payload) {
+  // Wrapper public (appelable via google.script.run depuis le client)
+  ensureSavSheets_();
+  return savGenerateLogistiqueShippingLabelPdf_(payload || {});
+}
+
 function savGenerateLogistiqueShippingLabelPdf_(o) {
   const sheetName = String(o && o.sheet ? o.sheet : "").trim();
   const row = Number(o && o.rowMain ? o.rowMain : 0);
@@ -6123,6 +6129,19 @@ function getSavHtml_(payloadB64) {
       d.style.display='block';
       d.textContent=(e&&e.message)?e.message:String(e);
     }
+    function showPdfLink(res){
+      // Affiche un bandeau cliquable avec le lien de téléchargement du PDF
+      var d=document.getElementById('diag');
+      if(!res||!res.fileUrl){ showErr('PDF généré mais lien introuvable.'); return; }
+      d.style.display='block';
+      d.style.background='#f0fdf4';
+      d.style.color='#166534';
+      d.style.borderColor='#bbf7d0';
+      d.innerHTML='<b>PDF prêt :</b> '+(res.fileName||'document.pdf')+
+        ' &nbsp;<a href="'+res.fileUrl+'" target="_blank" rel="noopener" '+
+        'style="color:#15803d;font-weight:700;text-decoration:underline">Télécharger / Ouvrir ↗</a>'+
+        ' &nbsp;<span style="cursor:pointer;opacity:.5" onclick="this.parentNode.style.display='none'">✕</span>';
+    }
     function b64ToObj(b64){
       var bin=atob(b64);
       // Décodage UTF-8 robuste (TextDecoder pas dispo partout, ex: IE/compat mode)
@@ -6458,15 +6477,8 @@ function getSavHtml_(payloadB64) {
         if(pid==='PROC_1_POSTAL'){
           btn('Demande retour plaque (PDF) →', function(b, oldLabel){
             google.script.run.withSuccessHandler(function(res){
-              if(res&&res.ok){
-                alert(
-                  'PDF généré : '+(res.fileName||'PDF')+
-                  '\\nLien : '+(res.fileUrl||'')+
-                  '\\nDossier Drive : '+(res.folderUrl||'')
-                );
-              }else{
-                showErr((res&&res.message)?res.message:'Erreur génération PDF');
-              }
+              if(res&&res.ok){ showPdfLink(res); }
+              else{ showErr((res&&res.message)?res.message:'Erreur génération PDF'); }
               reenable_(b, oldLabel);
             }).withFailureHandler(function(e){
               reenable_(b, oldLabel);
@@ -6475,15 +6487,8 @@ function getSavHtml_(payloadB64) {
           });
           btn('Feuille retour plaque (PDF) →', function(b, oldLabel){
             google.script.run.withSuccessHandler(function(res){
-              if(res&&res.ok){
-                alert(
-                  'Feuille générée : '+(res.fileName||'PDF')+
-                  '\\nLien : '+(res.fileUrl||'')+
-                  '\\nDossier Drive : '+(res.folderUrl||'')
-                );
-              }else{
-                showErr((res&&res.message)?res.message:'Erreur génération PDF');
-              }
+              if(res&&res.ok){ showPdfLink(res); }
+              else{ showErr((res&&res.message)?res.message:'Erreur génération PDF'); }
               reenable_(b, oldLabel);
             }).withFailureHandler(function(e){
               reenable_(b, oldLabel);
@@ -6512,15 +6517,8 @@ function getSavHtml_(payloadB64) {
           btn('Bon de retour (PDF) →', function(b, oldLabel){
             google.script.run
               .withSuccessHandler(function(res){
-                if(res && res.ok){
-                  alert(
-                    'PDF généré : '+(res.fileName||'PDF')+
-                    '\\nLien : '+(res.fileUrl||'')+
-                    '\\nDossier Drive : '+(res.folderUrl||'')
-                  );
-                }else{
-                  showErr((res&&res.message)?res.message:'Erreur génération PDF');
-                }
+                if(res&&res.ok){ showPdfLink(res); }
+                else{ showErr((res&&res.message)?res.message:'Erreur génération PDF'); }
                 reenable_(b, oldLabel);
               })
               .withFailureHandler(function(e){
@@ -6603,13 +6601,7 @@ function getSavHtml_(payloadB64) {
           }
           google.script.run.withSuccessHandler(function(res){
             try{
-              if(res && res.ok && res.fileUrl){
-                alert(
-                  'Bon d’envoi généré : '+(res.fileName||'PDF')+
-                  '\\nLien : '+(res.fileUrl||'')+
-                  '\\nDossier Drive : '+(res.folderUrl||'')
-                );
-              }
+              if(res && res.ok && res.fileUrl){ showPdfLink(res); }
             }catch(e){}
             reloadList(function(){
               var u=findByNumero_(allCases, c.numero);
@@ -6620,7 +6612,7 @@ function getSavHtml_(payloadB64) {
           }).withFailureHandler(function(e){
             reenable_(b, oldLabel);
             showErr(e);
-          }).savGenerateLogistiqueShippingLabelPdf_({
+          }).savGenerateLogistiqueShippingLabelPdf({
             sheet:c.sheet,
             rowMain:c.row,
             numero:c.numero,
@@ -6647,15 +6639,8 @@ function getSavHtml_(payloadB64) {
         if(c.type==='Distributeur'){
           btn('Rapport technique (PDF) →', function(b, oldLabel){
             google.script.run.withSuccessHandler(function(res){
-              if(res&&res.ok){
-                alert(
-                  'Rapport généré : '+(res.fileName||'PDF')+
-                  '\\nLien : '+(res.fileUrl||'')+
-                  '\\nDossier Drive : '+(res.folderUrl||'')
-                );
-              }else{
-                showErr((res&&res.message)?res.message:'Erreur génération PDF');
-              }
+              if(res&&res.ok){ showPdfLink(res); }
+              else{ showErr((res&&res.message)?res.message:'Erreur génération PDF'); }
               reenable_(b, oldLabel);
             }).withFailureHandler(function(e){
               reenable_(b, oldLabel);
@@ -7036,7 +7021,7 @@ function getSavHtml_(payloadB64) {
             btnPdf.onclick=function(){
               google.script.run.withSuccessHandler(function(res){
                 if(res&&res.ok){
-                  alert('PDF généré : '+(res.fileName||'PDF')+'\\nLien : '+(res.fileUrl||'')+'\\nDossier Drive : '+(res.folderUrl||''));
+                  showPdfLink(res);
                 }else{
                   showErr((res&&res.message)?res.message:'Erreur génération PDF');
                 }
