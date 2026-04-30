@@ -153,6 +153,7 @@ const HDR_DIST = [
   "Date mail accord retour atelier",
   "Référence dossier distributeur",
   "Demandes PDC",
+  "Email distributeur",
 ];
 
 const HDR_MP = [
@@ -305,8 +306,8 @@ const HDR_AVOIR_TICKETS = [
 ];
 
 // Emails récap quotidiens
-const SAV_MAIL_RELATION_CLIENT = "[relationclient@optimea.fr](mailto:relationclient@optimea.fr)";
-const SAV_MAIL_ADV = "[adv@optimea.fr](mailto:adv@optimea.fr)";
+const SAV_MAIL_RELATION_CLIENT = "relationclient@optimea.fr";
+const SAV_MAIL_ADV = "adv@optimea.fr";
 const SAV_MAIL_FROM = "cedric.gesnouin@optimea.fr";
 
 // =========================
@@ -2474,6 +2475,7 @@ function savCreateDistributor(payload) {
     "",
     distRef,
     "",
+    String(o.email || "").trim(),
   ];
   sh.appendRow(row);
   savCacheInvalidateAll_();
@@ -4261,7 +4263,87 @@ function savUpdateEtat(payload) {
     }
   }
   savCacheInvalidateAll_();
+
+  // Envoi email automatique sur transitions clés
+  try {
+    savSendTransitionEmail_({ sheet, row, etat, sh, idx });
+  } catch (e) {
+    // ne bloque pas le passage d'étape
+  }
+
   return { ok: true };
+}
+
+function savSendTransitionEmail_(ctx) {
+  const sheet = ctx.sheet;
+  const row = ctx.row;
+  const etat = ctx.etat;
+  const sh = ctx.sh;
+  const idx = ctx.idx;
+
+  // Transitions déclenchant un email
+  const ETATS_EMAIL = [ETAT_EN_ATTENTE, ETAT_RECU, ETAT_EXPERTISE, ETAT_CLOTURE_AVOIR];
+  if (ETATS_EMAIL.indexOf(etat) === -1) return;
+
+  const isDist = sheet === SAV_SHEET_DIST;
+  const width = isDist ? HDR_DIST.length : HDR_MP.length;
+  const rowData = sh.getRange(row, 1, 1, width).getValues()[0] || [];
+  const numero = String(rowData[0] || "").trim();
+  if (!numero) return;
+
+  let emailTo = "";
+  let clientNom = "";
+  if (isDist) {
+    clientNom = String(rowData[(idx["Nom magasin/distributeur"] || 2) - 1] || "").trim();
+    emailTo = String(rowData[(idx["Email distributeur"] || width) - 1] || "").trim();
+  } else {
+    clientNom = String(rowData[(idx["Nom client"] || 3) - 1] || "").trim();
+    emailTo = String(rowData[(idx["Email client"] || 4) - 1] || "").trim();
+  }
+  if (!emailTo) return;
+
+  const modele = String(rowData[(idx["Modèle concerné"] || (isDist ? 4 : 8)) - 1] || "").trim();
+
+  let subj = "";
+  let body = "";
+  const greeting = "Bonjour" + (clientNom ? " " + clientNom : "") + ",\n\n";
+  const sign = "\n\nCordialement,\nSAV OPTIMEA\n34 Rue du Moulin des Bruyères — 92400 COURBEVOIE";
+
+  if (etat === ETAT_EN_ATTENTE) {
+    subj = "Bon d'envoi dossier SAV numéro : " + numero + " - Client : " + clientNom;
+    body = greeting +
+      "Votre demande SAV n°" + numero + " a bien été enregistrée.\n\n" +
+      "Appareil concerné : " + modele + "\n\n" +
+      "Merci de nous retourner l'appareil à l'adresse suivante :\n" +
+      "OPTIMEA - SAV\n34 Rue du Moulin des Bruyères\n92400 COURBEVOIE\nFRANCE\n\n" +
+      "Merci d'indiquer le numéro de dossier SAV " + numero + " sur le colis." +
+      sign;
+  } else if (etat === ETAT_RECU) {
+    subj = "Dossier SAV n°" + numero + " — Appareil bien reçu";
+    body = greeting +
+      "Nous avons bien réceptionné l'appareil pour le dossier SAV n°" + numero + ".\n" +
+      "Appareil concerné : " + modele + "\n\n" +
+      "Notre équipe technique va procéder à l'expertise dans les meilleurs délais." +
+      sign;
+  } else if (etat === ETAT_EXPERTISE) {
+    subj = "Dossier SAV n°" + numero + " — Expertise en cours";
+    body = greeting +
+      "L'expertise de votre appareil pour le dossier SAV n°" + numero + " est en cours.\n" +
+      "Appareil concerné : " + modele + "\n\n" +
+      "Vous serez contacté(e) dès que l'expertise sera terminée." +
+      sign;
+  } else if (etat === ETAT_CLOTURE_AVOIR) {
+    subj = "Dossier SAV n°" + numero + " — Clôture avec avoir";
+    body = greeting +
+      "Votre dossier SAV n°" + numero + " a été clôturé avec l'émission d'un avoir.\n" +
+      "Appareil concerné : " + modele + "\n\n" +
+      "Pour toute question, n'hésitez pas à nous contacter." +
+      sign;
+  }
+
+  if (subj && body && emailTo) {
+    savSendEmailFromSav_(emailTo, subj, body, []);
+  }
 }
 
 function savSetMailAccordRetour(payload) {
