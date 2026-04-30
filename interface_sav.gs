@@ -7838,6 +7838,7 @@ function getSavHtml_(payloadB64) {
         '<div id="dMagOtherWrap" class="hide"><label>Autre magasin *</label><input id="dMagOther" placeholder="Saisir le nom du distributeur..." /></div>'+
         '<label>Référence dossier distributeur</label><input id="dRef" placeholder="Référence interne / centrale / commande..." />'+
         '<label>Adresse *</label><textarea id="dAdr"></textarea>'+
+        '<label>Email magasin / distributeur</label><input id="dMail" type="email" placeholder="ex: contact@magasin.fr" />'+
         '<label>Modèle *</label>'+
         '<div class="row" style="gap:8px;align-items:stretch">'+
           '<select id="dMod" style="flex:1"><option value="">—</option>'+opts+'</select>'+
@@ -8184,7 +8185,9 @@ function getSavHtml_(payloadB64) {
             var input=document.getElementById('dFiles');
             var fl=(input&&input.files)?Array.from(input.files):[];
             if(!fl.length){
-              alert('Dossier créé : '+res.numero);
+              var d=document.getElementById('diag');
+              if(d){d.style.display='block';d.style.background='#f0fdf4';d.style.color='#166534';d.style.borderColor='#bbf7d0';
+                d.textContent='Dossier créé : '+res.numero;}
               reloadList(function(){ showTab('list'); });
               done_();
               return;
@@ -8192,9 +8195,9 @@ function getSavHtml_(payloadB64) {
             uploadFiles_(fl, function(payloadFiles){
               google.script.run.withSuccessHandler(function(u){
                 if(u&&u.ok){
-                  alert('Dossier créé : '+res.numero+'\\nFichiers enregistrés : '+(u.created||0)+'\\nDossier Drive : '+(u.folderUrl||''));
+                  showPdfLink({fileName:'Dossier '+res.numero+' créé — '+String(u.created||0)+' fichier(s)',fileUrl:u.folderUrl||''});
                 }else{
-                  alert('Dossier créé : '+res.numero+'\\nUpload fichiers : échec');
+                  showErr('Dossier '+res.numero+' créé — mais l\'upload des fichiers a échoué.');
                 }
                 reloadList(function(){ showTab('list'); });
                 done_();
@@ -8204,6 +8207,7 @@ function getSavHtml_(payloadB64) {
             magasin:mag,
             refDistributeur:document.getElementById('dRef').value,
             adresse:document.getElementById('dAdr').value,
+            email:String((document.getElementById('dMail')&&document.getElementById('dMail').value)||'').trim(),
             modele:document.getElementById('dMod').value,
             panne:'['+dApp+' / '+dType+'] '+dPan,
             serie:document.getElementById('dSer').value,
@@ -8286,7 +8290,8 @@ function getSavHtml_(payloadB64) {
             var input=document.getElementById('mFiles');
             var fl=(input&&input.files)?Array.from(input.files):[];
             if(!fl.length){
-              alert('Dossier créé : '+res.numero);
+              var d=document.getElementById('diag');
+              if(d){d.style.display='block';d.style.background='#f0fdf4';d.style.color='#166534';d.style.borderColor='#bbf7d0';d.textContent='Dossier créé : '+res.numero;}
               reloadList(function(){ showTab('list'); });
               done_();
               return;
@@ -8294,7 +8299,7 @@ function getSavHtml_(payloadB64) {
             uploadFiles_(fl, function(payloadFiles){
               google.script.run.withSuccessHandler(function(u){
                 if(u&&u.ok){
-                  alert('Dossier créé : '+res.numero+'\\nFichiers enregistrés : '+(u.created||0)+'\\nDossier Drive : '+(u.folderUrl||''));
+                  showPdfLink({fileName:'Dossier '+res.numero+' créé — '+String(u.created||0)+' fichier(s)',fileUrl:u.folderUrl||''});
                 }else{
                   alert('Dossier créé : '+res.numero+'\\nUpload fichiers : échec');
                 }
